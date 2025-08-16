@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q-Learning Algorithm Tests</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .test-controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        #output {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            max-height: 600px;
+            overflow-y: auto;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+        }
+        
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .status.running {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .test-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .test-info h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        
+        .test-categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .category {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .category h4 {
+            margin: 0 0 5px 0;
+            color: #495057;
+        }
+        
+        .category ul {
+            margin: 0;
+            padding-left: 15px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Q-Learning Algorithm Test Suite</h1>
+        
+        <div class="test-info">
+            <h3>Test Coverage</h3>
+            <p>
+                Comprehensive testing for the Deep Q-Network (DQN) implementation designed for the 
+                two-wheel balancing robot reinforcement learning system. This test suite validates 
+                all components of the Q-learning algorithm including neural network integration, 
+                training mechanics, and physics simulation compatibility.
+            </p>
+        </div>
+        
+        <div class="test-categories">
+            <div class="category">
+                <h4>Core Components</h4>
+                <ul>
+                    <li>Hyperparameter Management</li>
+                    <li>Replay Buffer Operations</li>
+                    <li>Training Metrics</li>
+                    <li>Q-Learning Initialization</li>
+                </ul>
+            </div>
+            
+            <div class="category">
+                <h4>Learning Algorithm</h4>
+                <ul>
+                    <li>Action Selection (ε-greedy)</li>
+                    <li>Q-Value Calculation</li>
+                    <li>Network Training</li>
+                    <li>Target Network Updates</li>
+                </ul>
+            </div>
+            
+            <div class="category">
+                <h4>Training Process</h4>
+                <ul>
+                    <li>Episode Management</li>
+                    <li>Experience Collection</li>
+                    <li>Convergence Detection</li>
+                    <li>Performance Monitoring</li>
+                </ul>
+            </div>
+            
+            <div class="category">
+                <h4>Integration & Utils</h4>
+                <ul>
+                    <li>Physics Integration</li>
+                    <li>Model Save/Load</li>
+                    <li>Evaluation Mode</li>
+                    <li>Error Handling</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="test-controls">
+            <button id="runTests" onclick="runTests()">🚀 Run All Tests</button>
+            <button id="clearOutput" onclick="clearOutput()">🧹 Clear Output</button>
+            <button id="runDemo" onclick="runDemo()">🎯 Run Training Demo</button>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div id="output">Ready to run Q-Learning tests...
+        
+📋 Test Categories:
+• Hyperparameters: Validation, defaults, custom values, clamping
+• ReplayBuffer: Storage, sampling, circular buffer behavior
+• TrainingMetrics: Episode tracking, convergence detection, statistics
+• QLearning Core: Network initialization, action selection, training
+• Integration: Physics simulation, evaluation, save/load functionality
+• Edge Cases: Error handling, performance under load
+
+Click "Run All Tests" to begin comprehensive testing.
+        </div>
+    </div>
+
+    <script type="module">
+        import { runQLearningTests } from './QLearningTests.js';
+        import { createDefaultQLearning, createFastQLearning } from '../QLearning.js';
+        import { createTrainingRobot } from '../../physics/BalancingRobot.js';
+        
+        // Make functions available globally
+        window.runQLearningTests = runQLearningTests;
+        window.createDefaultQLearning = createDefaultQLearning;
+        window.createFastQLearning = createFastQLearning;
+        window.createTrainingRobot = createTrainingRobot;
+        
+        // Console output capturing
+        const originalConsole = {
+            log: console.log,
+            error: console.error,
+            warn: console.warn
+        };
+        
+        function captureConsoleOutput() {
+            const outputElement = document.getElementById('output');
+            
+            console.log = (...args) => {
+                const message = args.join(' ');
+                outputElement.textContent += message + '\n';
+                outputElement.scrollTop = outputElement.scrollHeight;
+                originalConsole.log(...args);
+            };
+            
+            console.error = (...args) => {
+                const message = '❌ ERROR: ' + args.join(' ');
+                outputElement.textContent += message + '\n';
+                outputElement.scrollTop = outputElement.scrollHeight;
+                originalConsole.error(...args);
+            };
+            
+            console.warn = (...args) => {
+                const message = '⚠️ WARNING: ' + args.join(' ');
+                outputElement.textContent += message + '\n';
+                outputElement.scrollTop = outputElement.scrollHeight;
+                originalConsole.warn(...args);
+            };
+        }
+        
+        function restoreConsoleOutput() {
+            console.log = originalConsole.log;
+            console.error = originalConsole.error;
+            console.warn = originalConsole.warn;
+        }
+        
+        // Test runner functions
+        window.runTests = async function() {
+            const runButton = document.getElementById('runTests');
+            const statusElement = document.getElementById('status');
+            const outputElement = document.getElementById('output');
+            
+            // Disable button and show running status
+            runButton.disabled = true;
+            statusElement.style.display = 'block';
+            statusElement.className = 'status running';
+            statusElement.textContent = '🔄 Running Q-Learning tests...';
+            
+            // Clear output and start capturing console
+            outputElement.textContent = '';
+            captureConsoleOutput();
+            
+            try {
+                console.log('🧪 Starting Q-Learning Algorithm Test Suite');
+                console.log('=' * 50);
+                console.log('');
+                
+                const startTime = Date.now();
+                const success = await runQLearningTests();
+                const endTime = Date.now();
+                const duration = ((endTime - startTime) / 1000).toFixed(2);
+                
+                console.log('');
+                console.log('=' * 50);
+                console.log(`⏱️ Total test execution time: ${duration} seconds`);
+                
+                if (success) {
+                    statusElement.className = 'status success';
+                    statusElement.textContent = `✅ All tests passed! (${duration}s)`;
+                } else {
+                    statusElement.className = 'status error';
+                    statusElement.textContent = `❌ Some tests failed. Check output for details. (${duration}s)`;
+                }
+                
+            } catch (error) {
+                console.error('Test execution failed:', error);
+                statusElement.className = 'status error';
+                statusElement.textContent = '💥 Test execution crashed! Check console for details.';
+            } finally {
+                // Restore console and re-enable button
+                restoreConsoleOutput();
+                runButton.disabled = false;
+            }
+        };
+        
+        window.clearOutput = function() {
+            document.getElementById('output').textContent = 'Output cleared. Ready for new test run...';
+            document.getElementById('status').style.display = 'none';
+        };
+        
+        window.runDemo = async function() {
+            const demoButton = document.getElementById('runDemo');
+            const statusElement = document.getElementById('status');
+            const outputElement = document.getElementById('output');
+            
+            demoButton.disabled = true;
+            statusElement.style.display = 'block';
+            statusElement.className = 'status running';
+            statusElement.textContent = '🎯 Running Q-Learning training demonstration...';
+            
+            outputElement.textContent = '';
+            captureConsoleOutput();
+            
+            try {
+                console.log('🎯 Q-Learning Training Demonstration');
+                console.log('=' * 40);
+                console.log('');
+                
+                // Create fast Q-learning for demo
+                const qlearning = createFastQLearning();
+                await qlearning.initialize();
+                
+                console.log('✓ Q-Learning algorithm initialized');
+                console.log(`Network architecture: ${qlearning.qNetwork.getArchitecture().inputSize}-${qlearning.qNetwork.getArchitecture().hiddenSize}-${qlearning.qNetwork.getArchitecture().outputSize}`);
+                console.log(`Total parameters: ${qlearning.qNetwork.getParameterCount()}`);
+                console.log('');
+                
+                // Create training robot
+                const robot = createTrainingRobot();
+                console.log('✓ Training robot created');
+                console.log('Robot configuration:', robot.getConfig());
+                console.log('');
+                
+                // Run short training
+                console.log('🏃 Starting training (5 episodes)...');
+                const trainingOptions = {
+                    verbose: true,
+                    earlyStop: false
+                };
+                
+                // Override max episodes for demo
+                qlearning.hyperparams.maxEpisodes = 5;
+                
+                const metrics = await qlearning.runTraining(robot, trainingOptions);
+                
+                console.log('');
+                console.log('📊 Training Results:');
+                const summary = metrics.getSummary();
+                console.log(`Episodes completed: ${summary.episodes}`);
+                console.log(`Total steps: ${summary.totalSteps}`);
+                console.log(`Average reward: ${summary.averageReward.toFixed(2)}`);
+                console.log(`Best reward: ${summary.bestReward.toFixed(2)}`);
+                console.log(`Final epsilon: ${summary.currentEpsilon.toFixed(3)}`);
+                console.log(`Training time: ${summary.trainingTime.toFixed(1)}s`);
+                
+                // Quick evaluation
+                console.log('');
+                console.log('🔍 Running evaluation (3 episodes)...');
+                const evalResults = qlearning.evaluate(robot, 3);
+                console.log(`Evaluation average reward: ${evalResults.averageReward.toFixed(2)}`);
+                console.log(`Evaluation best reward: ${evalResults.bestReward.toFixed(2)}`);
+                
+                statusElement.className = 'status success';
+                statusElement.textContent = '✅ Training demonstration completed successfully!';
+                
+            } catch (error) {
+                console.error('Demo execution failed:', error);
+                statusElement.className = 'status error';
+                statusElement.textContent = '💥 Demo crashed! Check output for details.';
+            } finally {
+                restoreConsoleOutput();
+                demoButton.disabled = false;
+            }
+        };
+        
+        // Initialize console capture on page load
+        captureConsoleOutput();
+        
+        // Show initial information
+        console.log('🔬 Q-Learning Test Suite Ready');
+        console.log('');
+        console.log('This test suite validates the Deep Q-Network implementation for');
+        console.log('the two-wheel balancing robot reinforcement learning system.');
+        console.log('');
+        console.log('📈 Features tested:');
+        console.log('• Neural network function approximation with CPUBackend');
+        console.log('• Epsilon-greedy exploration with decay');
+        console.log('• Experience replay buffer');
+        console.log('• Target network for stable training');
+        console.log('• Temporal difference learning');
+        console.log('• Training episode management');
+        console.log('• Convergence detection');
+        console.log('• Integration with physics simulation');
+        console.log('');
+        console.log('Click buttons above to run tests or demo!');
+        
+        restoreConsoleOutput();
+    </script>
+</body>
+</html>
