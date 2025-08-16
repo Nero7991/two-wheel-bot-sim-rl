@@ -18,12 +18,16 @@ export class RobotState {
      * @param {number} angularVelocity - Angular velocity in rad/s
      * @param {number} position - Horizontal position in meters
      * @param {number} velocity - Horizontal velocity in m/s
+     * @param {number} wheelAngle - Wheel rotation angle in radians
+     * @param {number} wheelVelocity - Wheel angular velocity in rad/s
      */
-    constructor(angle = 0, angularVelocity = 0, position = 0, velocity = 0) {
+    constructor(angle = 0, angularVelocity = 0, position = 0, velocity = 0, wheelAngle = 0, wheelVelocity = 0) {
         this.angle = angle;
         this.angularVelocity = angularVelocity;
         this.position = position;
         this.velocity = velocity;
+        this.wheelAngle = wheelAngle;        // Wheel rotation angle in radians
+        this.wheelVelocity = wheelVelocity;     // Wheel angular velocity in rad/s
     }
 
     /**
@@ -31,7 +35,7 @@ export class RobotState {
      * @returns {RobotState} New state instance with same values
      */
     clone() {
-        return new RobotState(this.angle, this.angularVelocity, this.position, this.velocity);
+        return new RobotState(this.angle, this.angularVelocity, this.position, this.velocity, this.wheelAngle, this.wheelVelocity);
     }
 
     /**
@@ -73,15 +77,24 @@ export class BalancingRobot {
     constructor(config = {}) {
         // Validate and set parameters with defaults
         this.mass = this._validateParameter(config.mass, 1.0, 0.5, 3.0, 'mass');
-        this.centerOfMassHeight = this._validateParameter(config.centerOfMassHeight, 0.5, 0.2, 1.0, 'centerOfMassHeight');
+        this.centerOfMassHeight = this._validateParameter(config.centerOfMassHeight, 0.4, 0.2, 1.0, 'centerOfMassHeight');
         this.motorStrength = this._validateParameter(config.motorStrength, 5.0, 2.0, 10.0, 'motorStrength');
-        this.friction = this._validateParameter(config.friction, 0.1, 0.0, 1.0, 'friction');
-        this.damping = this._validateParameter(config.damping, 0.05, 0.0, 1.0, 'damping');
+        this.friction = this._validateParameter(config.friction, 0.02, 0.0, 1.0, 'friction');
+        this.damping = this._validateParameter(config.damping, 0.01, 0.0, 1.0, 'damping');
         this.timestep = this._validateParameter(config.timestep, 0.02, 0.001, 0.1, 'timestep');
+        this.wheelRadius = this._validateParameter(config.wheelRadius, 0.12, 0.02, 0.20, 'wheelRadius');
+        this.wheelMass = this._validateParameter(config.wheelMass, 0.2, 0.1, 1.0, 'wheelMass');
+        this.wheelFriction = this._validateParameter(config.wheelFriction, 0.3, 0.0, 1.0, 'wheelFriction');
 
         // Physical constants
         this.gravity = 9.81; // m/s²
-        this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight / 3; // Simplified MOI
+        // For a uniform rod of length L rotating about one end: I = (1/3) * m * L^2
+        // But for a point mass at height h: I = m * h^2
+        // Use point mass approximation for inverted pendulum
+        this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight;
+        
+        // Wheel moment of inertia (for solid cylinder: I = 0.5 * m * r^2)
+        this.wheelInertia = 0.5 * this.wheelMass * this.wheelRadius * this.wheelRadius;
 
         // Initialize state
         this.state = new RobotState();
@@ -120,7 +133,9 @@ export class BalancingRobot {
             this._normalizeAngle(initialState.angle || 0),
             initialState.angularVelocity || 0,
             initialState.position || 0,
-            initialState.velocity || 0
+            initialState.velocity || 0,
+            initialState.wheelAngle || 0,
+            initialState.wheelVelocity || 0
         );
         this.currentMotorTorque = 0;
         this.stepCount = 0;
@@ -177,29 +192,48 @@ export class BalancingRobot {
     _updatePhysics() {
         const dt = this.timestep;
         
-        // Calculate forces and torques
+        // Calculate pendulum torques
         const gravityTorque = this.mass * this.gravity * this.centerOfMassHeight * Math.sin(this.state.angle);
         const dampingTorque = -this.damping * this.state.angularVelocity;
-        const totalTorque = this.currentMotorTorque - gravityTorque + dampingTorque;
-
-        // Calculate angular acceleration
-        const angularAcceleration = totalTorque / this.momentOfInertia;
-
-        // Update angular motion (Euler integration)
+        
+        // Motor torque acts on wheels, creating opposite reaction on pendulum (Newton's 3rd law)
+        const pendulumTorque = -this.currentMotorTorque + gravityTorque + dampingTorque;
+        
+        // Calculate angular acceleration of pendulum
+        const angularAcceleration = pendulumTorque / this.momentOfInertia;
+        
+        // Update pendulum angular motion
         this.state.angularVelocity += angularAcceleration * dt;
         this.state.angle += this.state.angularVelocity * dt;
+        
+        // Simplified wheel dynamics - direct coupling for visual clarity
+        // Motor torque creates force through wheels
+        const motorForce = this.currentMotorTorque / this.wheelRadius;
 
-        // Calculate horizontal forces
-        // Motor force is proportional to torque (simplified wheel dynamics)
-        const wheelRadius = 0.05; // 5cm wheel radius (simplified)
-        const motorForce = this.currentMotorTorque / wheelRadius;
-        const frictionForce = -this.friction * this.state.velocity * this.mass * this.gravity;
+        // Ground friction force (opposing motion)
+        const normalForce = this.mass * this.gravity;
+        const frictionForce = -this.friction * this.state.velocity * normalForce;
+
+        // Total horizontal force
         const totalForce = motorForce + frictionForce;
 
-        // Update horizontal motion (Euler integration)
-        const acceleration = totalForce / this.mass;
-        this.state.velocity += acceleration * dt;
+        // Update horizontal motion
+        const horizontalAcceleration = totalForce / this.mass;
+        this.state.velocity += horizontalAcceleration * dt;
         this.state.position += this.state.velocity * dt;
+
+        // Update wheel rotation to exactly match movement (no slip)
+        // For perfect rolling: distance = radius * angle
+        const distanceTraveled = this.state.velocity * dt;
+        const wheelRotationChange = distanceTraveled / this.wheelRadius;
+        this.state.wheelAngle += wheelRotationChange;
+
+        // Keep wheel angle in reasonable range to prevent overflow
+        while (this.state.wheelAngle > Math.PI * 2) this.state.wheelAngle -= Math.PI * 2;
+        while (this.state.wheelAngle < -Math.PI * 2) this.state.wheelAngle += Math.PI * 2;
+
+        // Set wheel velocity to match (for consistency)
+        this.state.wheelVelocity = this.state.velocity / this.wheelRadius;
     }
 
     /**
@@ -260,7 +294,10 @@ export class BalancingRobot {
             motorStrength: this.motorStrength,
             friction: this.friction,
             damping: this.damping,
-            timestep: this.timestep
+            timestep: this.timestep,
+            wheelRadius: this.wheelRadius,
+            wheelMass: this.wheelMass,
+            wheelFriction: this.wheelFriction
         };
     }
 
@@ -272,12 +309,12 @@ export class BalancingRobot {
         if (config.mass !== undefined) {
             this.mass = this._validateParameter(config.mass, this.mass, 0.5, 3.0, 'mass');
             // Recalculate moment of inertia when mass or height changes
-            this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight / 3;
+            this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight;
         }
         if (config.centerOfMassHeight !== undefined) {
             this.centerOfMassHeight = this._validateParameter(config.centerOfMassHeight, this.centerOfMassHeight, 0.2, 1.0, 'centerOfMassHeight');
             // Recalculate moment of inertia when mass or height changes
-            this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight / 3;
+            this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight;
         }
         if (config.motorStrength !== undefined) {
             this.motorStrength = this._validateParameter(config.motorStrength, this.motorStrength, 2.0, 10.0, 'motorStrength');
@@ -290,6 +327,17 @@ export class BalancingRobot {
         }
         if (config.timestep !== undefined) {
             this.timestep = this._validateParameter(config.timestep, this.timestep, 0.001, 0.1, 'timestep');
+        }
+        if (config.wheelRadius !== undefined) {
+            this.wheelRadius = this._validateParameter(config.wheelRadius, this.wheelRadius, 0.02, 0.20, 'wheelRadius');
+            this.wheelInertia = 0.5 * this.wheelMass * this.wheelRadius * this.wheelRadius;
+        }
+        if (config.wheelMass !== undefined) {
+            this.wheelMass = this._validateParameter(config.wheelMass, this.wheelMass, 0.1, 1.0, 'wheelMass');
+            this.wheelInertia = 0.5 * this.wheelMass * this.wheelRadius * this.wheelRadius;
+        }
+        if (config.wheelFriction !== undefined) {
+            this.wheelFriction = this._validateParameter(config.wheelFriction, this.wheelFriction, 0.0, 1.0, 'wheelFriction');
         }
         
         console.log('Robot configuration updated:', this.getConfig());
@@ -341,8 +389,8 @@ export function createTrainingRobot() {
         mass: 1.0,
         centerOfMassHeight: 0.3,
         motorStrength: 3.0,
-        friction: 0.05,
-        damping: 0.02,
+        friction: 0.02,
+        damping: 0.01,
         timestep: 0.02
     });
 }
@@ -356,8 +404,8 @@ export function createRealisticRobot() {
         mass: 1.5,
         centerOfMassHeight: 0.4,
         motorStrength: 4.0,
-        friction: 0.15,
-        damping: 0.08,
+        friction: 0.1,
+        damping: 0.05,
         timestep: 0.02
     });
 }

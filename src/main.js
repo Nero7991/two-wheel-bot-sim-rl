@@ -8,6 +8,7 @@ import './network/shaders/webgpu-polyfill.js';
 
 // Core module imports
 import { createRenderer } from './visualization/Renderer.js';
+import { createPerformanceCharts } from './visualization/Charts.js';
 import { createDefaultRobot } from './physics/BalancingRobot.js';
 import { createDefaultQLearning } from './training/QLearning.js';
 import { WebGPUBackend, checkWebGPUAvailability } from './network/WebGPUBackend.js';
@@ -28,7 +29,8 @@ class UIControls {
             epsilon: 0.3,
             robotMass: 1.0,
             robotHeight: 0.4,
-            motorStrength: 5.0
+            motorStrength: 5.0,
+            wheelFriction: 0.3
         };
         
         // Parameter validation ranges
@@ -39,7 +41,8 @@ class UIControls {
             epsilon: { min: 0.0, max: 1.0 },
             robotMass: { min: 0.5, max: 3.0 },
             robotHeight: { min: 0.2, max: 0.8 },
-            motorStrength: { min: 1.0, max: 10.0 }
+            motorStrength: { min: 1.0, max: 10.0 },
+            wheelFriction: { min: 0.0, max: 1.0 }
         };
         
         this.loadParameters();
@@ -129,6 +132,19 @@ class UIControls {
             motorStrengthValue.textContent = `${value.toFixed(1)} Nm`;
             this.app.updateMotorStrength(value);
         });
+        
+        // Wheel friction control
+        const wheelFrictionSlider = document.getElementById('wheel-friction');
+        const wheelFrictionValue = document.getElementById('wheel-friction-value');
+
+        if (wheelFrictionSlider) {
+            wheelFrictionSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.setParameter('wheelFriction', value);
+                wheelFrictionValue.textContent = value.toFixed(2);
+                this.app.updateWheelFriction(value);
+            });
+        }
     }
     
     setupKeyboardShortcuts() {
@@ -257,6 +273,11 @@ class UIControls {
         
         document.getElementById('motor-strength').value = this.parameters.motorStrength;
         document.getElementById('motor-strength-value').textContent = `${this.parameters.motorStrength.toFixed(1)} Nm`;
+        
+        if (document.getElementById('wheel-friction')) {
+            document.getElementById('wheel-friction').value = this.parameters.wheelFriction;
+            document.getElementById('wheel-friction-value').textContent = this.parameters.wheelFriction.toFixed(2);
+        }
     }
     
     saveParameters() {
@@ -307,6 +328,7 @@ class TwoWheelBotRL {
         this.robot = null;
         this.qlearning = null;
         this.uiControls = null;
+        this.performanceCharts = null;
         
         // Application state
         this.isTraining = false;
@@ -410,6 +432,14 @@ class TwoWheelBotRL {
         // Add resize listener
         window.addEventListener('resize', () => this.resizeCanvas());
         
+        // Initialize performance charts
+        const chartsPanel = document.getElementById('charts-panel');
+        if (chartsPanel) {
+            this.performanceCharts = createPerformanceCharts(chartsPanel);
+            this.performanceCharts.start();
+            console.log('Performance charts initialized');
+        }
+        
         console.log('Renderer initialized:', this.canvas.width, 'x', this.canvas.height);
     }
 
@@ -496,6 +526,11 @@ class TwoWheelBotRL {
             // Will be implemented in export module
         });
         
+        document.getElementById('test-model-btn')?.addEventListener('click', () => {
+            this.switchDemoMode('evaluation');
+            console.log('Testing trained model');
+        });
+        
         document.getElementById('export-model').addEventListener('click', () => {
             console.log('Export model');
             // Will be implemented in export module
@@ -511,6 +546,28 @@ class TwoWheelBotRL {
         // WebGPU status refresh
         document.getElementById('refresh-webgpu').addEventListener('click', () => {
             this.updateWebGPUStatusDisplay();
+        });
+        
+        // Zoom controls
+        document.getElementById('zoom-in-btn')?.addEventListener('click', () => {
+            if (this.renderer) {
+                this.renderer.transform.zoomIn();
+                console.log('Zoomed in to', this.renderer.transform.getZoomLevel());
+            }
+        });
+
+        document.getElementById('zoom-out-btn')?.addEventListener('click', () => {
+            if (this.renderer) {
+                this.renderer.transform.zoomOut();
+                console.log('Zoomed out to', this.renderer.transform.getZoomLevel());
+            }
+        });
+
+        document.getElementById('zoom-reset-btn')?.addEventListener('click', () => {
+            if (this.renderer) {
+                this.renderer.transform.resetZoom();
+                console.log('Zoom reset to 1.0');
+            }
         });
         
         console.log('Controls initialized');
@@ -761,6 +818,17 @@ class TwoWheelBotRL {
             document.getElementById('fps-counter').textContent = `FPS: ${perfMetrics.fps}`;
         }
         
+        // Update performance charts
+        if (this.performanceCharts && this.isTraining) {
+            this.performanceCharts.updateMetrics({
+                episode: this.episodeCount,
+                reward: this.currentReward,
+                loss: Math.random() * 0.5, // Placeholder - will be replaced with actual loss
+                qValue: Math.random() * 10, // Placeholder - will be replaced with actual Q-value
+                epsilon: this.qlearning ? this.qlearning.hyperparams.epsilon : 0
+            });
+        }
+        
         // Update backend performance info
         this.updateBackendPerformanceDisplay();
     }
@@ -946,10 +1014,10 @@ class TwoWheelBotRL {
         const state = this.robot.getState();
         
         // Simple PD controller for demonstration
-        const kp = 50; // Proportional gain
-        const kd = 10; // Derivative gain
+        const kp = 20; // Proportional gain
+        const kd = 5;  // Derivative gain
         
-        const torque = -(kp * state.angle + kd * state.angularVelocity);
+        const torque = (kp * state.angle + kd * state.angularVelocity);
         
         // Add some noise for more interesting behavior
         const noise = (Math.random() - 0.5) * 0.5;
@@ -1142,6 +1210,15 @@ class TwoWheelBotRL {
         }
     }
     
+    updateWheelFriction(friction) {
+        if (this.robot) {
+            const config = this.robot.getConfig();
+            config.wheelFriction = friction;
+            this.robot.updateConfig(config);
+            console.log(`Wheel friction updated to ${friction}`);
+        }
+    }
+    
     /**
      * Update manual control torque based on pressed keys
      */
@@ -1155,7 +1232,7 @@ class TwoWheelBotRL {
             // Left pressed - negative torque (move left)
             this.manualControl.manualTorque = -maxTorque * 0.8;
         } else if (this.manualControl.rightPressed) {
-            // Right pressed - positive torque (move right)
+            // Right pressed - positive torque (move right)  
             this.manualControl.manualTorque = maxTorque * 0.8;
         } else {
             // No keys pressed
