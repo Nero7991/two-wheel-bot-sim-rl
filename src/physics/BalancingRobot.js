@@ -265,6 +265,37 @@ export class BalancingRobot {
     }
 
     /**
+     * Update robot configuration parameters
+     * @param {Object} config - New configuration parameters
+     */
+    updateConfig(config) {
+        if (config.mass !== undefined) {
+            this.mass = this._validateParameter(config.mass, this.mass, 0.5, 3.0, 'mass');
+            // Recalculate moment of inertia when mass or height changes
+            this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight / 3;
+        }
+        if (config.centerOfMassHeight !== undefined) {
+            this.centerOfMassHeight = this._validateParameter(config.centerOfMassHeight, this.centerOfMassHeight, 0.2, 1.0, 'centerOfMassHeight');
+            // Recalculate moment of inertia when mass or height changes
+            this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight / 3;
+        }
+        if (config.motorStrength !== undefined) {
+            this.motorStrength = this._validateParameter(config.motorStrength, this.motorStrength, 2.0, 10.0, 'motorStrength');
+        }
+        if (config.friction !== undefined) {
+            this.friction = this._validateParameter(config.friction, this.friction, 0.0, 1.0, 'friction');
+        }
+        if (config.damping !== undefined) {
+            this.damping = this._validateParameter(config.damping, this.damping, 0.0, 1.0, 'damping');
+        }
+        if (config.timestep !== undefined) {
+            this.timestep = this._validateParameter(config.timestep, this.timestep, 0.001, 0.1, 'timestep');
+        }
+        
+        console.log('Robot configuration updated:', this.getConfig());
+    }
+
+    /**
      * Get simulation statistics
      * @returns {Object} Statistics object
      */

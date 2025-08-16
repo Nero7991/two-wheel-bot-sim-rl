@@ -105,6 +105,135 @@
             cursor: not-allowed;
         }
 
+        button.active {
+            background-color: #00d4ff;
+            color: #000;
+        }
+
+        button.primary {
+            background-color: #00d4ff;
+            color: #000;
+        }
+
+        button.primary:hover {
+            background-color: #00b8e6;
+        }
+
+        button.danger {
+            background-color: #ff4444;
+            color: white;
+        }
+
+        button.danger:hover {
+            background-color: #ff6666;
+        }
+
+        .slider-container {
+            margin: 8px 0;
+        }
+
+        .slider-container label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+
+        .slider-container input[type="range"] {
+            width: 100%;
+            margin: 4px 0;
+            appearance: none;
+            height: 4px;
+            background: #404040;
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .slider-container input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #00d4ff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .slider-container input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #00d4ff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        .slider-value {
+            font-size: 0.8rem;
+            color: #00d4ff;
+            text-align: right;
+        }
+
+        .parameter-group {
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 12px;
+            margin: 8px 0;
+            background-color: #333;
+        }
+
+        .parameter-group h4 {
+            margin: 0 0 8px 0;
+            color: #00d4ff;
+            font-size: 0.9rem;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-indicator.training {
+            background-color: #00ff88;
+            animation: pulse 1s infinite;
+        }
+
+        .status-indicator.paused {
+            background-color: #ffaa00;
+        }
+
+        .status-indicator.stopped {
+            background-color: #666;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .tooltip {
+            position: relative;
+            cursor: help;
+        }
+
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            z-index: 1000;
+        }
+
         .loading {
             display: flex;
             align-items: center;
@@ -148,10 +277,77 @@
             
             <div id="controls-panel">
                 <div class="control-section">
-                    <h3>Training Control</h3>
-                    <button id="start-training">Start Training</button>
+                    <h3>
+                        <span id="training-status-indicator" class="status-indicator stopped"></span>
+                        Training Control
+                    </h3>
+                    <button id="start-training" class="primary">Start Training</button>
                     <button id="pause-training" disabled>Pause Training</button>
-                    <button id="reset-environment">Reset Environment</button>
+                    <button id="reset-environment" class="danger">Reset Environment</button>
+                    
+                    <div class="slider-container">
+                        <label for="training-speed" class="tooltip" data-tooltip="Simulation speed multiplier (1x = real-time)">
+                            Training Speed: <span id="training-speed-value" class="slider-value">1.0x</span>
+                        </label>
+                        <input type="range" id="training-speed" min="0.1" max="10" step="0.1" value="1.0">
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Network Configuration</h3>
+                    <div class="parameter-group">
+                        <h4>Architecture</h4>
+                        <div class="slider-container">
+                            <label for="hidden-neurons" class="tooltip" data-tooltip="Number of neurons in hidden layer (4-16)">
+                                Hidden Neurons: <span id="hidden-neurons-value" class="slider-value">8</span>
+                            </label>
+                            <input type="range" id="hidden-neurons" min="4" max="16" step="1" value="8">
+                        </div>
+                    </div>
+                    
+                    <div class="parameter-group">
+                        <h4>Learning Parameters</h4>
+                        <div class="slider-container">
+                            <label for="learning-rate" class="tooltip" data-tooltip="Neural network learning rate (0.0001-0.01)">
+                                Learning Rate: <span id="learning-rate-value" class="slider-value">0.001</span>
+                            </label>
+                            <input type="range" id="learning-rate" min="0.0001" max="0.01" step="0.0001" value="0.001">
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label for="epsilon" class="tooltip" data-tooltip="Exploration rate for epsilon-greedy policy (0-1)">
+                                Epsilon: <span id="epsilon-value" class="slider-value">0.3</span>
+                            </label>
+                            <input type="range" id="epsilon" min="0" max="1" step="0.01" value="0.3">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Physics Parameters</h3>
+                    <div class="parameter-group">
+                        <h4>Robot Properties</h4>
+                        <div class="slider-container">
+                            <label for="robot-mass" class="tooltip" data-tooltip="Robot mass in kg (0.5-3.0)">
+                                Mass: <span id="robot-mass-value" class="slider-value">1.0 kg</span>
+                            </label>
+                            <input type="range" id="robot-mass" min="0.5" max="3.0" step="0.1" value="1.0">
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label for="robot-height" class="tooltip" data-tooltip="Center of mass height in meters (0.2-0.8)">
+                                Height: <span id="robot-height-value" class="slider-value">0.4 m</span>
+                            </label>
+                            <input type="range" id="robot-height" min="0.2" max="0.8" step="0.05" value="0.4">
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label for="motor-strength" class="tooltip" data-tooltip="Motor torque strength (1-10 Nm)">
+                                Motor Strength: <span id="motor-strength-value" class="slider-value">5.0 Nm</span>
+                            </label>
+                            <input type="range" id="motor-strength" min="1" max="10" step="0.5" value="5.0">
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="control-section">
@@ -166,14 +362,28 @@
                     <button id="save-model">Save Model</button>
                     <button id="load-model">Load Model</button>
                     <button id="export-model">Export Model</button>
+                    <button id="reset-parameters">Reset Parameters</button>
                 </div>
                 
                 <div class="control-section">
-                    <h3>Performance</h3>
+                    <h3>Keyboard Shortcuts</h3>
+                    <div style="font-size: 0.8rem; line-height: 1.4;">
+                        <div><strong>Space:</strong> Pause/Resume</div>
+                        <div><strong>S:</strong> Start Training</div>
+                        <div><strong>R:</strong> Reset Environment</div>
+                        <div><strong>H:</strong> Toggle Debug Info</div>
+                        <div><strong>1-3:</strong> Demo Modes</div>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Performance Metrics</h3>
                     <div id="fps-counter">FPS: --</div>
                     <div id="training-step">Step: 0</div>
                     <div id="episode-count">Episode: 0</div>
                     <div id="best-score">Best Score: 0</div>
+                    <div id="current-reward">Current Reward: 0</div>
+                    <div id="epsilon-display">Epsilon: --</div>
                 </div>
             </div>
         </div>

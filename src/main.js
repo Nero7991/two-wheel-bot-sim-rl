@@ -11,6 +11,240 @@ import { createDefaultQLearning } from './training/QLearning.js';
 // Module imports (will be implemented in subsequent phases)
 // import { ModelExporter } from './export/ModelExporter.js';
 
+/**
+ * UI Controls Manager for parameter management and validation
+ */
+class UIControls {
+    constructor(app) {
+        this.app = app;
+        this.parameters = {
+            trainingSpeed: 1.0,
+            hiddenNeurons: 8,
+            learningRate: 0.001,
+            epsilon: 0.3,
+            robotMass: 1.0,
+            robotHeight: 0.4,
+            motorStrength: 5.0
+        };
+        
+        // Parameter validation ranges
+        this.validationRanges = {
+            trainingSpeed: { min: 0.1, max: 10.0 },
+            hiddenNeurons: { min: 4, max: 16 },
+            learningRate: { min: 0.0001, max: 0.01 },
+            epsilon: { min: 0.0, max: 1.0 },
+            robotMass: { min: 0.5, max: 3.0 },
+            robotHeight: { min: 0.2, max: 0.8 },
+            motorStrength: { min: 1.0, max: 10.0 }
+        };
+        
+        this.loadParameters();
+    }
+    
+    initialize() {
+        this.setupSliderControls();
+        this.setupKeyboardShortcuts();
+        this.updateAllDisplays();
+        console.log('UI Controls initialized');
+    }
+    
+    setupSliderControls() {
+        // Training speed control
+        const trainingSpeedSlider = document.getElementById('training-speed');
+        const trainingSpeedValue = document.getElementById('training-speed-value');
+        
+        trainingSpeedSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('trainingSpeed', value);
+            trainingSpeedValue.textContent = `${value.toFixed(1)}x`;
+            this.app.setTrainingSpeed(value);
+        });
+        
+        // Hidden neurons control
+        const hiddenNeuronsSlider = document.getElementById('hidden-neurons');
+        const hiddenNeuronsValue = document.getElementById('hidden-neurons-value');
+        
+        hiddenNeuronsSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            this.setParameter('hiddenNeurons', value);
+            hiddenNeuronsValue.textContent = value.toString();
+            this.app.updateNetworkArchitecture(value);
+        });
+        
+        // Learning rate control
+        const learningRateSlider = document.getElementById('learning-rate');
+        const learningRateValue = document.getElementById('learning-rate-value');
+        
+        learningRateSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('learningRate', value);
+            learningRateValue.textContent = value.toFixed(4);
+            this.app.updateLearningRate(value);
+        });
+        
+        // Epsilon control
+        const epsilonSlider = document.getElementById('epsilon');
+        const epsilonValue = document.getElementById('epsilon-value');
+        
+        epsilonSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('epsilon', value);
+            epsilonValue.textContent = value.toFixed(2);
+            this.app.updateEpsilon(value);
+        });
+        
+        // Robot mass control
+        const robotMassSlider = document.getElementById('robot-mass');
+        const robotMassValue = document.getElementById('robot-mass-value');
+        
+        robotMassSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('robotMass', value);
+            robotMassValue.textContent = `${value.toFixed(1)} kg`;
+            this.app.updateRobotMass(value);
+        });
+        
+        // Robot height control
+        const robotHeightSlider = document.getElementById('robot-height');
+        const robotHeightValue = document.getElementById('robot-height-value');
+        
+        robotHeightSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('robotHeight', value);
+            robotHeightValue.textContent = `${value.toFixed(2)} m`;
+            this.app.updateRobotHeight(value);
+        });
+        
+        // Motor strength control
+        const motorStrengthSlider = document.getElementById('motor-strength');
+        const motorStrengthValue = document.getElementById('motor-strength-value');
+        
+        motorStrengthSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('motorStrength', value);
+            motorStrengthValue.textContent = `${value.toFixed(1)} Nm`;
+            this.app.updateMotorStrength(value);
+        });
+    }
+    
+    setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            // Ignore if user is typing in an input field
+            if (e.target.tagName === 'INPUT') return;
+            
+            switch (e.key.toLowerCase()) {
+                case ' ': // Spacebar - pause/resume training
+                    e.preventDefault();
+                    if (this.app.isTraining) {
+                        this.app.pauseTraining();
+                    }
+                    break;
+                case 's': // S - start training
+                    e.preventDefault();
+                    this.app.startTraining();
+                    break;
+                case 'r': // R - reset environment
+                    e.preventDefault();
+                    this.app.resetEnvironment();
+                    break;
+                case '1': // 1-3 for demo modes
+                    e.preventDefault();
+                    this.app.switchDemoMode('physics');
+                    break;
+                case '2':
+                    e.preventDefault();
+                    this.app.switchDemoMode('training');
+                    break;
+                case '3':
+                    e.preventDefault();
+                    this.app.switchDemoMode('evaluation');
+                    break;
+                case 'h': // H - toggle help/debug info
+                    e.preventDefault();
+                    this.app.renderer.toggleUI('robot');
+                    break;
+            }
+        });
+    }
+    
+    setParameter(paramName, value) {
+        // Validate parameter range
+        const range = this.validationRanges[paramName];
+        if (range) {
+            value = Math.max(range.min, Math.min(range.max, value));
+        }
+        
+        this.parameters[paramName] = value;
+        this.saveParameters();
+        
+        console.log(`Parameter ${paramName} set to ${value}`);
+    }
+    
+    getParameter(paramName) {
+        return this.parameters[paramName];
+    }
+    
+    updateAllDisplays() {
+        // Update all slider values and displays
+        document.getElementById('training-speed').value = this.parameters.trainingSpeed;
+        document.getElementById('training-speed-value').textContent = `${this.parameters.trainingSpeed.toFixed(1)}x`;
+        
+        document.getElementById('hidden-neurons').value = this.parameters.hiddenNeurons;
+        document.getElementById('hidden-neurons-value').textContent = this.parameters.hiddenNeurons.toString();
+        
+        document.getElementById('learning-rate').value = this.parameters.learningRate;
+        document.getElementById('learning-rate-value').textContent = this.parameters.learningRate.toFixed(4);
+        
+        document.getElementById('epsilon').value = this.parameters.epsilon;
+        document.getElementById('epsilon-value').textContent = this.parameters.epsilon.toFixed(2);
+        
+        document.getElementById('robot-mass').value = this.parameters.robotMass;
+        document.getElementById('robot-mass-value').textContent = `${this.parameters.robotMass.toFixed(1)} kg`;
+        
+        document.getElementById('robot-height').value = this.parameters.robotHeight;
+        document.getElementById('robot-height-value').textContent = `${this.parameters.robotHeight.toFixed(2)} m`;
+        
+        document.getElementById('motor-strength').value = this.parameters.motorStrength;
+        document.getElementById('motor-strength-value').textContent = `${this.parameters.motorStrength.toFixed(1)} Nm`;
+    }
+    
+    saveParameters() {
+        try {
+            localStorage.setItem('twowheelbot-rl-parameters', JSON.stringify(this.parameters));
+        } catch (error) {
+            console.warn('Failed to save parameters to localStorage:', error);
+        }
+    }
+    
+    loadParameters() {
+        try {
+            const saved = localStorage.getItem('twowheelbot-rl-parameters');
+            if (saved) {
+                const loadedParams = JSON.parse(saved);
+                this.parameters = { ...this.parameters, ...loadedParams };
+                console.log('Parameters loaded from localStorage');
+            }
+        } catch (error) {
+            console.warn('Failed to load parameters from localStorage:', error);
+        }
+    }
+    
+    resetToDefaults() {
+        this.parameters = {
+            trainingSpeed: 1.0,
+            hiddenNeurons: 8,
+            learningRate: 0.001,
+            epsilon: 0.3,
+            robotMass: 1.0,
+            robotHeight: 0.4,
+            motorStrength: 5.0
+        };
+        this.updateAllDisplays();
+        this.saveParameters();
+        console.log('Parameters reset to defaults');
+    }
+}
+
 class TwoWheelBotRL {
     constructor() {
         this.canvas = null;
@@ -21,6 +255,7 @@ class TwoWheelBotRL {
         // Core components
         this.robot = null;
         this.qlearning = null;
+        this.uiControls = null;
         
         // Application state
         this.isTraining = false;
@@ -30,12 +265,21 @@ class TwoWheelBotRL {
         this.bestScore = 0;
         this.currentReward = 0;
         
+        // Training control
+        this.trainingSpeed = 1.0;
+        this.targetPhysicsStepsPerFrame = 1;
+        
         // Demo modes
         this.demoMode = 'physics'; // 'physics', 'training', 'evaluation'
         
         // Physics simulation timing
         this.lastPhysicsUpdate = 0;
         this.physicsUpdateInterval = 20; // 50 Hz physics updates
+        
+        // Performance monitoring
+        this.frameTimeHistory = [];
+        this.lastFrameTime = 0;
+        this.performanceCheckInterval = 60; // Check every 60 frames (~1 second)
     }
 
     async initialize() {
@@ -56,6 +300,10 @@ class TwoWheelBotRL {
             
             // Initialize UI controls
             this.initializeControls();
+            
+            // Initialize UI Controls Manager
+            this.uiControls = new UIControls(this);
+            this.uiControls.initialize();
             
             // Start simulation and rendering
             this.startSimulation();
@@ -174,6 +422,13 @@ class TwoWheelBotRL {
             // Will be implemented in export module
         });
         
+        document.getElementById('reset-parameters').addEventListener('click', () => {
+            if (this.uiControls) {
+                this.uiControls.resetToDefaults();
+                console.log('Parameters reset to defaults');
+            }
+        });
+        
         console.log('Controls initialized');
     }
 
@@ -267,6 +522,30 @@ class TwoWheelBotRL {
         const simulate = (timestamp) => {
             if (!this.isInitialized) return;
             
+            // Performance monitoring
+            if (this.lastFrameTime > 0) {
+                const frameTime = timestamp - this.lastFrameTime;
+                this.frameTimeHistory.push(frameTime);
+                
+                // Keep only recent history
+                if (this.frameTimeHistory.length > this.performanceCheckInterval) {
+                    this.frameTimeHistory.shift();
+                }
+                
+                // Auto-adjust training speed if performance is poor
+                if (this.frameTimeHistory.length === this.performanceCheckInterval) {
+                    const avgFrameTime = this.frameTimeHistory.reduce((a, b) => a + b) / this.frameTimeHistory.length;
+                    const targetFrameTime = 16.67; // 60 FPS target
+                    
+                    if (avgFrameTime > targetFrameTime * 1.5 && this.targetPhysicsStepsPerFrame > 1) {
+                        // Performance is poor, reduce training speed
+                        this.setTrainingSpeed(Math.max(1.0, this.trainingSpeed * 0.8));
+                        console.warn(`Performance degraded (${avgFrameTime.toFixed(1)}ms/frame), reducing training speed to ${this.trainingSpeed.toFixed(1)}x`);
+                    }
+                }
+            }
+            this.lastFrameTime = timestamp;
+            
             // Update physics at fixed intervals
             if (timestamp - this.lastPhysicsUpdate >= this.physicsUpdateInterval) {
                 this.updatePhysics();
@@ -285,35 +564,43 @@ class TwoWheelBotRL {
     updatePhysics() {
         if (!this.robot) return;
         
-        let motorTorque = 0;
+        // Run multiple physics steps per frame for training speed control
+        // Limit steps to maintain UI responsiveness during intensive training
+        const maxStepsPerFrame = Math.min(this.targetPhysicsStepsPerFrame, 5);
+        const stepsToRun = this.isTraining && !this.isPaused ? maxStepsPerFrame : 1;
         
-        // Get motor torque based on current mode
-        switch (this.demoMode) {
-            case 'physics':
-                motorTorque = this.getPhysicsDemoTorque();
-                break;
-            case 'training':
-                if (this.isTraining && !this.isPaused) {
-                    motorTorque = this.getTrainingTorque();
-                }
-                break;
-            case 'evaluation':
-                motorTorque = this.getEvaluationTorque();
-                break;
-        }
-        
-        // Step physics simulation
-        const result = this.robot.step(motorTorque);
-        this.currentReward = result.reward;
-        
-        // Handle episode completion for training/evaluation
-        if (result.done && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
-            this.handleEpisodeEnd(result);
-        }
-        
-        // Update training step counter
-        if (this.isTraining && !this.isPaused) {
-            this.trainingStep++;
+        for (let step = 0; step < stepsToRun; step++) {
+            let motorTorque = 0;
+            
+            // Get motor torque based on current mode
+            switch (this.demoMode) {
+                case 'physics':
+                    motorTorque = this.getPhysicsDemoTorque();
+                    break;
+                case 'training':
+                    if (this.isTraining && !this.isPaused) {
+                        motorTorque = this.getTrainingTorque();
+                    }
+                    break;
+                case 'evaluation':
+                    motorTorque = this.getEvaluationTorque();
+                    break;
+            }
+            
+            // Step physics simulation
+            const result = this.robot.step(motorTorque);
+            this.currentReward = result.reward;
+            
+            // Handle episode completion for training/evaluation
+            if (result.done && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+                this.handleEpisodeEnd(result);
+                break; // Don't continue stepping after episode ends
+            }
+            
+            // Update training step counter
+            if (this.isTraining && !this.isPaused) {
+                this.trainingStep++;
+            }
         }
     }
 
@@ -346,6 +633,22 @@ class TwoWheelBotRL {
         document.getElementById('training-step').textContent = `Step: ${this.trainingStep.toLocaleString()}`;
         document.getElementById('episode-count').textContent = `Episode: ${this.episodeCount}`;
         document.getElementById('best-score').textContent = `Best Score: ${this.bestScore.toFixed(1)}`;
+        document.getElementById('current-reward').textContent = `Current Reward: ${this.currentReward.toFixed(1)}`;
+        
+        // Update epsilon display
+        if (this.qlearning) {
+            document.getElementById('epsilon-display').textContent = `Epsilon: ${this.qlearning.hyperparams.epsilon.toFixed(3)}`;
+        }
+        
+        // Update training status indicator
+        const statusIndicator = document.getElementById('training-status-indicator');
+        if (this.isTraining && !this.isPaused) {
+            statusIndicator.className = 'status-indicator training';
+        } else if (this.isTraining && this.isPaused) {
+            statusIndicator.className = 'status-indicator paused';
+        } else {
+            statusIndicator.className = 'status-indicator stopped';
+        }
         
         // Update FPS from renderer performance
         if (this.renderer) {
@@ -385,11 +688,14 @@ class TwoWheelBotRL {
      * Initialize physics and ML components
      */
     async initializeComponents() {
-        // Initialize robot physics
+        // Get parameters from UI controls (will be loaded from localStorage if available)
+        const uiControls = new UIControls(this);
+        
+        // Initialize robot physics with parameters
         this.robot = createDefaultRobot({
-            mass: 1.0,
-            centerOfMassHeight: 0.4,
-            motorStrength: 5.0,
+            mass: uiControls.getParameter('robotMass'),
+            centerOfMassHeight: uiControls.getParameter('robotHeight'),
+            motorStrength: uiControls.getParameter('motorStrength'),
             friction: 0.1,
             damping: 0.05
         });
@@ -409,17 +715,27 @@ class TwoWheelBotRL {
      * Initialize Q-learning for training
      */
     async initializeQLearning() {
-        this.qlearning = createDefaultQLearning({
+        // Use parameters from UI controls if available
+        const params = this.uiControls ? {
+            learningRate: this.uiControls.getParameter('learningRate'),
+            epsilon: this.uiControls.getParameter('epsilon'),
+            epsilonDecay: 0.995,
+            maxEpisodes: 1000,
+            maxStepsPerEpisode: 1000,
+            hiddenSize: this.uiControls.getParameter('hiddenNeurons')
+        } : {
             learningRate: 0.001,
             epsilon: 0.3,
             epsilonDecay: 0.995,
             maxEpisodes: 1000,
             maxStepsPerEpisode: 1000,
             hiddenSize: 8
-        });
+        };
+        
+        this.qlearning = createDefaultQLearning(params);
         
         await this.qlearning.initialize();
-        console.log('Q-learning initialized');
+        console.log('Q-learning initialized with parameters:', params);
     }
     
     /**
@@ -549,6 +865,66 @@ class TwoWheelBotRL {
         
         // Reset environment for new mode
         this.resetEnvironment();
+    }
+    
+    /**
+     * Parameter update methods called by UI controls
+     */
+    setTrainingSpeed(speed) {
+        this.trainingSpeed = Math.max(0.1, Math.min(10.0, speed));
+        this.targetPhysicsStepsPerFrame = Math.round(this.trainingSpeed);
+        console.log(`Training speed set to ${speed}x (${this.targetPhysicsStepsPerFrame} steps/frame)`);
+    }
+    
+    updateNetworkArchitecture(hiddenSize) {
+        console.log(`Network architecture update requested: ${hiddenSize} hidden neurons`);
+        // Note: This requires reinitializing the Q-learning network
+        // For now, we'll log the request and apply it on next training start
+        if (this.qlearning) {
+            this.qlearning.hyperparams.hiddenSize = hiddenSize;
+            console.log('Network architecture will be updated on next training initialization');
+        }
+    }
+    
+    updateLearningRate(learningRate) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.learningRate = learningRate;
+            console.log(`Learning rate updated to ${learningRate}`);
+        }
+    }
+    
+    updateEpsilon(epsilon) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.epsilon = epsilon;
+            console.log(`Epsilon updated to ${epsilon}`);
+        }
+    }
+    
+    updateRobotMass(mass) {
+        if (this.robot) {
+            const config = this.robot.getConfig();
+            config.mass = mass;
+            this.robot.updateConfig(config);
+            console.log(`Robot mass updated to ${mass} kg`);
+        }
+    }
+    
+    updateRobotHeight(height) {
+        if (this.robot) {
+            const config = this.robot.getConfig();
+            config.centerOfMassHeight = height;
+            this.robot.updateConfig(config);
+            console.log(`Robot height updated to ${height} m`);
+        }
+    }
+    
+    updateMotorStrength(strength) {
+        if (this.robot) {
+            const config = this.robot.getConfig();
+            config.motorStrength = strength;
+            this.robot.updateConfig(config);
+            console.log(`Motor strength updated to ${strength} Nm`);
+        }
     }
 }
 
