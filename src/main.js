@@ -35,7 +35,7 @@ class UIControls {
         
         // Parameter validation ranges
         this.validationRanges = {
-            trainingSpeed: { min: 0.1, max: 10.0 },
+            trainingSpeed: { min: 0.1, max: 100.0 },
             hiddenNeurons: { min: 4, max: 16 },
             learningRate: { min: 0.0001, max: 0.01 },
             epsilon: { min: 0.0, max: 1.0 },
@@ -179,9 +179,9 @@ class UIControls {
                     e.preventDefault();
                     this.app.switchDemoMode('evaluation');
                     break;
-                case '4': // 4 - manual control mode
+                case '4': // 4 - toggle user control (arrows)
                     e.preventDefault();
-                    this.app.switchDemoMode('manual');
+                    this.app.toggleUserControl();
                     break;
                 case 'h': // H - toggle help/debug info
                     e.preventDefault();
@@ -193,7 +193,7 @@ class UIControls {
         // Manual control arrow keys - separate handlers for keydown/keyup
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT') return;
-            if (!this.app.manualControl.enabled) return;
+            if (!this.app.userControlEnabled) return; // Check userControlEnabled instead
             
             switch (e.key) {
                 case 'ArrowLeft':
@@ -217,7 +217,7 @@ class UIControls {
         
         document.addEventListener('keyup', (e) => {
             if (e.target.tagName === 'INPUT') return;
-            if (!this.app.manualControl.enabled) return;
+            if (!this.app.userControlEnabled) return; // Check userControlEnabled instead
             
             switch (e.key) {
                 case 'ArrowLeft':
@@ -341,6 +341,7 @@ class TwoWheelBotRL {
         // Training control
         this.trainingSpeed = 1.0;
         this.targetPhysicsStepsPerFrame = 1;
+        this.episodeEnded = false; // Flag to prevent multiple episode end calls
         
         // Demo modes
         this.demoMode = 'physics'; // 'physics', 'training', 'evaluation', 'manual'
@@ -353,6 +354,12 @@ class TwoWheelBotRL {
             upPressed: false,
             manualTorque: 0
         };
+        
+        // PD controller toggle state
+        this.pdControllerEnabled = true; // Start enabled in physics mode
+        
+        // User control toggle state (separate from manual mode)
+        this.userControlEnabled = false;
         
         // Physics simulation timing
         this.lastPhysicsUpdate = 0;
@@ -400,6 +407,10 @@ class TwoWheelBotRL {
             
             // Start simulation and rendering
             this.startSimulation();
+            
+            // Initialize UI state
+            this.updatePDControllerUI();
+            this.updateUserControlUI();
             
             this.isInitialized = true;
             console.log('Application initialized successfully!');
@@ -469,6 +480,14 @@ class TwoWheelBotRL {
                 this.webgpuStatus.error = quickCheck.reason;
             }
             
+            // Hide status text after 10 seconds
+            setTimeout(() => {
+                const statusContainer = document.getElementById('webgpu-status');
+                if (statusContainer) {
+                    statusContainer.style.display = 'none';
+                }
+            }, 10000);
+            
             // Store status for detailed UI display
             this.webgpuStatus.deviceInfo = quickCheck;
             
@@ -476,6 +495,14 @@ class TwoWheelBotRL {
             console.warn('WebGPU backend initialization failed:', error.message);
             statusElement.textContent = 'WebGPU Error (CPU fallback)';
             statusElement.className = 'status-unavailable';
+            
+            // Hide status text after 10 seconds (error case)
+            setTimeout(() => {
+                const statusContainer = document.getElementById('webgpu-status');
+                if (statusContainer) {
+                    statusContainer.style.display = 'none';
+                }
+            }, 10000);
             
             this.webgpuStatus.checked = true;
             this.webgpuStatus.available = false;
@@ -570,7 +597,59 @@ class TwoWheelBotRL {
             }
         });
         
+        // PD Controller toggle
+        document.getElementById('toggle-pd-controller')?.addEventListener('click', () => {
+            this.togglePDController();
+        });
+        
+        // User Control toggle
+        document.getElementById('toggle-user-control')?.addEventListener('click', () => {
+            this.toggleUserControl();
+        });
+        
+        // Setup collapsible sections
+        this.setupCollapsibleSections();
+        
         console.log('Controls initialized');
+    }
+
+    /**
+     * Setup collapsible control sections
+     */
+    setupCollapsibleSections() {
+        // Find all control section headers and add click handlers
+        const sections = document.querySelectorAll('.control-section h3');
+        
+        sections.forEach(header => {
+            header.addEventListener('click', () => {
+                const section = header.parentElement;
+                section.classList.toggle('collapsed');
+                
+                // Optional: Save section states to localStorage
+                const sectionTitle = header.textContent.trim();
+                const isCollapsed = section.classList.contains('collapsed');
+                localStorage.setItem(`section-${sectionTitle}`, isCollapsed.toString());
+                
+                console.log(`Toggled section: ${sectionTitle} (${isCollapsed ? 'collapsed' : 'expanded'})`);
+            });
+        });
+        
+        // Restore section states from localStorage
+        sections.forEach(header => {
+            const sectionTitle = header.textContent.trim();
+            const savedState = localStorage.getItem(`section-${sectionTitle}`);
+            
+            if (savedState !== null) {
+                const section = header.parentElement;
+                const shouldCollapse = savedState === 'true';
+                
+                if (shouldCollapse) {
+                    section.classList.add('collapsed');
+                } else {
+                    section.classList.remove('collapsed');
+                }
+            }
+        });
     }
 
     async startTraining() {
@@ -593,6 +672,9 @@ class TwoWheelBotRL {
         
         document.getElementById('start-training').disabled = true;
         document.getElementById('pause-training').disabled = false;
+        
+        // Update PD controller UI (disabled during training)
+        this.updatePDControllerUI();
         
         console.log('Training started');
     }
@@ -629,6 +711,9 @@ class TwoWheelBotRL {
         document.getElementById('start-training').disabled = false;
         document.getElementById('pause-training').disabled = true;
         document.getElementById('pause-training').textContent = 'Pause Training';
+        
+        // Update PD controller UI (re-enabled after training stops)
+        this.updatePDControllerUI();
         
         this.updateUI();
         
@@ -725,7 +810,7 @@ class TwoWheelBotRL {
         
         // Run multiple physics steps per frame for training speed control
         // Limit steps to maintain UI responsiveness during intensive training
-        const maxStepsPerFrame = Math.min(this.targetPhysicsStepsPerFrame, 5);
+        const maxStepsPerFrame = Math.min(this.targetPhysicsStepsPerFrame, 100);
         const stepsToRun = this.isTraining && !this.isPaused ? maxStepsPerFrame : 1;
         
         for (let step = 0; step < stepsToRun; step++) {
@@ -734,18 +819,37 @@ class TwoWheelBotRL {
             // Get motor torque based on current mode
             switch (this.demoMode) {
                 case 'physics':
-                    motorTorque = this.getPhysicsDemoTorque();
+                    // In physics mode: user arrows take precedence over PD controller
+                    if (this.userControlEnabled && (this.manualControl.leftPressed || this.manualControl.rightPressed)) {
+                        motorTorque = this.getManualTorque();
+                    } else if (this.pdControllerEnabled) {
+                        motorTorque = this.getPhysicsDemoTorque();
+                    }
                     break;
                 case 'training':
                     if (this.isTraining && !this.isPaused) {
                         motorTorque = this.getTrainingTorque();
+                    } else {
+                        // When training paused/stopped: user arrows take precedence over PD controller
+                        if (this.userControlEnabled && (this.manualControl.leftPressed || this.manualControl.rightPressed)) {
+                            motorTorque = this.getManualTorque();
+                        } else if (this.pdControllerEnabled) {
+                            motorTorque = this.getPhysicsDemoTorque();
+                        }
                     }
                     break;
                 case 'evaluation':
                     motorTorque = this.getEvaluationTorque();
                     break;
                 case 'manual':
-                    motorTorque = this.getManualTorque();
+                    // Manual mode: arrows take precedence over PD controller
+                    if (this.manualControl.leftPressed || this.manualControl.rightPressed) {
+                        motorTorque = this.getManualTorque();
+                    } else if (this.pdControllerEnabled) {
+                        motorTorque = this.getPhysicsDemoTorque();
+                    } else {
+                        motorTorque = this.getManualTorque(); // This will be 0 if no keys pressed
+                    }
                     break;
             }
             
@@ -753,10 +857,12 @@ class TwoWheelBotRL {
             const result = this.robot.step(motorTorque);
             this.currentReward = result.reward;
             
-            // Handle episode completion for training/evaluation
-            if (result.done && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+            // Handle episode completion for training/evaluation (only once per episode)
+            // Skip episode completion when training is paused to prevent falling/resetting
+            if (result.done && (this.demoMode === 'training' || this.demoMode === 'evaluation') && !this.isPaused && !this.episodeEnded) {
+                this.episodeEnded = true; // Set flag to prevent multiple calls
                 this.handleEpisodeEnd(result);
-                break; // Don't continue stepping after episode ends
+                return; // Exit physics update completely to avoid multiple episode ends
             }
             
             // Update training step counter
@@ -1062,6 +1168,7 @@ class TwoWheelBotRL {
      */
     startNewEpisode() {
         this.trainingStep = 0;
+        this.episodeEnded = false; // Reset episode end flag
         
         // Reset robot with small random perturbation
         this.robot.reset({
@@ -1085,19 +1192,20 @@ class TwoWheelBotRL {
             this.bestScore = totalReward;
         }
         
-        this.episodeCount++;
-        
         if (this.demoMode === 'training' && this.isTraining) {
+            // Only increment episode count during actual training
+            this.episodeCount++;
             console.log(`Episode ${this.episodeCount} completed: Reward=${totalReward.toFixed(2)}, Steps=${this.trainingStep}`);
             
             // Start next episode after brief pause
             setTimeout(() => {
-                if (this.isTraining && this.episodeCount < 100) { // Limit for demo
+                if (this.isTraining) {
                     this.startNewEpisode();
                 }
             }, 100);
         } else {
-            // Evaluation mode or demo - restart after longer pause
+            // Evaluation mode or demo - restart after longer pause (no episode count increment)
+            console.log(`Evaluation run completed: Reward=${totalReward.toFixed(2)}`);
             setTimeout(() => {
                 this.robot.reset({
                     angle: (Math.random() - 0.5) * 0.2,
@@ -1141,6 +1249,10 @@ class TwoWheelBotRL {
             console.log('Manual control enabled. Use arrow keys: ← → to balance, ↑ to reset');
         }
         
+        // Update PD controller UI based on new mode
+        this.updatePDControllerUI();
+        this.updateUserControlUI();
+        
         // Initialize Q-learning if switching to training or evaluation mode
         if ((newMode === 'training' || newMode === 'evaluation') && !this.qlearning) {
             await this.initializeQLearning();
@@ -1154,7 +1266,7 @@ class TwoWheelBotRL {
      * Parameter update methods called by UI controls
      */
     setTrainingSpeed(speed) {
-        this.trainingSpeed = Math.max(0.1, Math.min(10.0, speed));
+        this.trainingSpeed = Math.max(0.1, Math.min(100.0, speed));
         this.targetPhysicsStepsPerFrame = Math.round(this.trainingSpeed);
         console.log(`Training speed set to ${speed}x (${this.targetPhysicsStepsPerFrame} steps/frame)`);
     }
@@ -1245,6 +1357,84 @@ class TwoWheelBotRL {
      */
     getManualTorque() {
         return this.manualControl.manualTorque;
+    }
+    
+    /**
+     * Toggle PD controller on/off
+     */
+    togglePDController() {
+        // Don't allow PD controller during training or evaluation
+        if ((this.demoMode === 'training' && this.isTraining) || this.demoMode === 'evaluation') {
+            console.log('PD Controller cannot be enabled during training or model testing');
+            return;
+        }
+        
+        this.pdControllerEnabled = !this.pdControllerEnabled;
+        this.updatePDControllerUI();
+        
+        console.log('PD Controller', this.pdControllerEnabled ? 'enabled' : 'disabled');
+    }
+    
+    /**
+     * Update PD controller button UI
+     */
+    updatePDControllerUI() {
+        const button = document.getElementById('toggle-pd-controller');
+        const text = document.getElementById('pd-controller-text');
+        const status = document.getElementById('pd-controller-status');
+        
+        if (!button || !text || !status) return;
+        
+        // Check if PD controller should be disabled
+        const shouldDisable = (this.demoMode === 'training' && this.isTraining) || this.demoMode === 'evaluation';
+        
+        if (shouldDisable) {
+            button.disabled = true;
+            text.textContent = 'PD Controller';
+            status.textContent = '(Disabled during training/testing)';
+            status.style.color = '#666';
+            this.pdControllerEnabled = false;
+        } else {
+            button.disabled = false;
+            text.textContent = this.pdControllerEnabled ? 'Disable PD Controller' : 'Enable PD Controller';
+            status.textContent = this.pdControllerEnabled ? '(Active)' : '(Disabled)';
+            status.style.color = this.pdControllerEnabled ? '#00ff88' : '#888';
+            status.style.marginLeft = '0'; // Remove margin since using <br>
+        }
+    }
+    
+    /**
+     * Toggle user control (arrow keys) on/off
+     */
+    toggleUserControl() {
+        this.userControlEnabled = !this.userControlEnabled;
+        this.updateUserControlUI();
+        
+        // Clear any pressed keys when disabling
+        if (!this.userControlEnabled) {
+            this.manualControl.leftPressed = false;
+            this.manualControl.rightPressed = false;
+            this.manualControl.manualTorque = 0;
+        }
+        
+        console.log('User Control (arrows)', this.userControlEnabled ? 'enabled' : 'disabled');
+    }
+    
+    /**
+     * Update user control button UI
+     */
+    updateUserControlUI() {
+        const button = document.getElementById('toggle-user-control');
+        const text = document.getElementById('user-control-text');
+        const status = document.getElementById('user-control-status');
+        
+        if (!button || !text || !status) return;
+        
+        button.disabled = false;
+        text.textContent = this.userControlEnabled ? 'Disable User Control' : 'Enable User Control';
+        status.textContent = this.userControlEnabled ? '(Active - Use ← →)' : '(Disabled)';
+        status.style.color = this.userControlEnabled ? '#00ff88' : '#888';
+        status.style.marginLeft = '0'; // Remove margin since using <br>
     }
     
     /**

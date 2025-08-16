@@ -126,3 +126,14 @@ project/
 - Exported C++ code runs on 48MHz MCU
 - Memory usage under 384KB on embedded systems
 - Real-time visualization at 60 FPS
+
+Use Port 3005 for this app. If something exists, you are free to kill it. 3005 is reserved for this.
+
+## Testing Requirements
+
+Before committing changes, test the changes using Puppeteer with the following resolutions to ensure proper layout and alignment:
+
+- **1280x800** - Standard desktop resolution
+- **1920x1080** - Full HD resolution  
+
+Make sure everything is nice and aligned across both test resolutions.

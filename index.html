@@ -63,6 +63,16 @@
             flex-shrink: 0;
         }
 
+        #charts-panel {
+            background-color: #1a1a1a;
+            width: 350px;
+            border-left: 1px solid #404040;
+            overflow-y: auto;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
         #webgpu-status {
             position: absolute;
             top: 10px;
@@ -196,10 +206,10 @@
 
         .status-indicator {
             display: inline-block;
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            margin-right: 6px;
+            margin-left: 8px;
         }
 
         .status-indicator.training {
@@ -267,6 +277,93 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* Responsive design for charts panel */
+        @media (max-width: 1400px) {
+            #charts-panel {
+                width: 300px;
+            }
+        }
+
+        @media (max-width: 1200px) {
+            #charts-panel {
+                display: none;
+            }
+        }
+
+        @media (max-width: 900px) {
+            #controls-panel {
+                width: 250px;
+            }
+        }
+
+        /* Collapsible control sections */
+        .control-section h3 {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 20px;
+        }
+
+        .control-section h3::after {
+            content: '▼';
+            position: absolute;
+            right: 0;
+            top: 0;
+            transition: transform 0.2s ease;
+        }
+
+        .control-section.collapsed h3::after {
+            transform: rotate(-90deg);
+        }
+
+        /* Remove arrow for Training Control section but keep it collapsible */
+        .control-section:first-of-type h3::after {
+            display: none;
+        }
+
+        .control-section:first-of-type {
+            margin-top: 15px;
+        }
+
+        .control-section:first-of-type h3 {
+            padding-right: 0;
+        }
+
+        /* Keep the status indicator visible for Training Control */
+
+        .control-section-content {
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .control-section.collapsed .control-section-content {
+            max-height: 0;
+        }
+
+        .control-section:not(.collapsed) .control-section-content {
+            max-height: 1000px;
+        }
+
+        /* Consistent spacing for control sections */
+        .control-section {
+            padding-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+
+        .control-section:last-child {
+            border-bottom: none;
+            padding-bottom: 10px;
+        }
+
+        .control-section h3 {
+            margin-bottom: 12px;
+            margin-top: 0;
+        }
+
+        .control-section-content {
+            padding-top: 0;
+        }
     </style>
 </head>
 <body>
@@ -283,25 +380,40 @@
             </div>
             
             <div id="controls-panel">
-                <div class="control-section">
-                    <h3>
-                        <span id="training-status-indicator" class="status-indicator stopped"></span>
-                        Training Control
-                    </h3>
-                    <button id="start-training" class="primary">Start Training</button>
-                    <button id="pause-training" disabled>Pause Training</button>
-                    <button id="reset-environment" class="danger">Reset Environment</button>
-                    
-                    <div class="slider-container">
-                        <label for="training-speed" class="tooltip" data-tooltip="Simulation speed multiplier (1x = real-time)">
-                            Training Speed: <span id="training-speed-value" class="slider-value">1.0x</span>
-                        </label>
-                        <input type="range" id="training-speed" min="0.1" max="10" step="0.1" value="1.0">
-                    </div>
+                <div style="padding: 20px 15px; border-bottom: 1px solid #404040; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 5px;">
+                    <button id="toggle-pd-controller" class="control-btn" style="min-width: 180px; white-space: nowrap;">
+                        <span id="pd-controller-text">Disable PD Controller</span>
+                        <br><span id="pd-controller-status" style="font-size: 0.8em; color: #00ff88;">(Active)</span>
+                    </button>
+                    <button id="toggle-user-control" class="control-btn" style="min-width: 180px; white-space: nowrap;">
+                        <span id="user-control-text">Enable User Control</span>
+                        <br><span id="user-control-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
+                    </button>
                 </div>
                 
                 <div class="control-section">
+                    <h3>
+                        Training Control
+                        <span id="training-status-indicator" class="status-indicator stopped"></span>
+                    </h3>
+                    <div class="control-section-content">
+                        <button id="start-training" class="primary">Start Training</button>
+                        <button id="pause-training" disabled>Pause Training</button>
+                        <button id="test-model-btn" class="control-btn">Test Model</button>
+                        <button id="reset-environment" class="danger">Reset Environment</button>
+                        
+                        <div class="slider-container">
+                            <label for="training-speed" class="tooltip" data-tooltip="Simulation speed multiplier (1x = real-time)">
+                                Training Speed: <span id="training-speed-value" class="slider-value">1.0x</span>
+                            </label>
+                            <input type="range" id="training-speed" min="0.1" max="100" step="0.1" value="1.0">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="control-section collapsed">
                     <h3>Network Configuration</h3>
+                    <div class="control-section-content">
                     <div class="parameter-group">
                         <h4>Architecture</h4>
                         <div class="slider-container">
@@ -328,10 +440,12 @@
                             <input type="range" id="epsilon" min="0" max="1" step="0.01" value="0.3">
                         </div>
                     </div>
+                    </div>
                 </div>
                 
-                <div class="control-section">
+                <div class="control-section collapsed">
                     <h3>Physics Parameters</h3>
+                    <div class="control-section-content">
                     <div class="parameter-group">
                         <h4>Robot Properties</h4>
                         <div class="slider-container">
@@ -354,63 +468,95 @@
                             </label>
                             <input type="range" id="motor-strength" min="1" max="10" step="0.5" value="5.0">
                         </div>
+                        
+                        <div class="slider-container">
+                            <label for="wheel-friction" class="tooltip" data-tooltip="Wheel-ground friction coefficient (0.0-1.0)">
+                                Wheel Friction: <span id="wheel-friction-value" class="slider-value">0.30</span>
+                            </label>
+                            <input type="range" id="wheel-friction" min="0" max="1" step="0.05" value="0.3">
+                        </div>
+                    </div>
                     </div>
                 </div>
                 
-                <div class="control-section">
+                <div class="control-section collapsed">
                     <h3>Visualization</h3>
-                    <button id="toggle-physics">Toggle Physics Debug</button>
-                    <button id="toggle-network">Toggle Network View</button>
-                    <button id="toggle-metrics">Toggle Metrics</button>
+                    <div class="control-section-content">
+                        <button id="toggle-physics">Toggle Physics Debug</button>
+                        <button id="toggle-network">Toggle Network View</button>
+                        <button id="toggle-metrics">Toggle Metrics</button>
+                        
+                        <div class="zoom-controls">
+                            <button id="zoom-in-btn" class="zoom-btn">Zoom In (+)</button>
+                            <button id="zoom-out-btn" class="zoom-btn">Zoom Out (-)</button>
+                            <button id="zoom-reset-btn" class="zoom-btn">Reset Zoom</button>
+                        </div>
+                    </div>
                 </div>
                 
-                <div class="control-section">
+                <div class="control-section collapsed">
                     <h3>Model Management</h3>
-                    <button id="save-model">Save Model</button>
-                    <button id="load-model">Load Model</button>
-                    <button id="export-model">Export Model</button>
-                    <button id="reset-parameters">Reset Parameters</button>
+                    <div class="control-section-content">
+                        <button id="save-model">Save Model</button>
+                        <button id="load-model">Load Model</button>
+                        <button id="export-model">Export Model</button>
+                        <button id="reset-parameters">Reset Parameters</button>
+                    </div>
                 </div>
                 
-                <div class="control-section">
+                <div class="control-section collapsed">
                     <h3>Keyboard Shortcuts</h3>
-                    <div style="font-size: 0.8rem; line-height: 1.4;">
-                        <div><strong>Space:</strong> Pause/Resume</div>
-                        <div><strong>S:</strong> Start Training</div>
-                        <div><strong>R:</strong> Reset Environment</div>
-                        <div><strong>H:</strong> Toggle Debug Info</div>
-                        <div><strong>1-4:</strong> Demo Modes</div>
-                        <div><strong>Arrow Keys:</strong> Manual Control</div>
-                        <div style="margin-left: 10px; color: #ccc;">
-                            <div>↑: Reset (when not training)</div>
-                            <div>← →: Balance left/right</div>
+                    <div class="control-section-content">
+                        <div style="font-size: 0.8rem; line-height: 1.4;">
+                            <div><strong>Space:</strong> Pause/Resume</div>
+                            <div><strong>S:</strong> Start Training</div>
+                            <div><strong>R:</strong> Reset Environment</div>
+                            <div><strong>H:</strong> Toggle Debug Info</div>
+                            <div><strong>1-4:</strong> Demo Modes</div>
+                            <div><strong>Arrow Keys:</strong> Manual Control</div>
+                            <div style="margin-left: 10px; color: #ccc;">
+                                <div>↑: Reset (when not training)</div>
+                                <div>← →: Balance left/right</div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <div class="control-section">
+                <div class="control-section collapsed">
                     <h3>Backend Information</h3>
-                    <div class="parameter-group">
-                        <h4>WebGPU Status</h4>
-                        <div id="webgpu-detailed-status">
-                            <div id="backend-type">Backend: Checking...</div>
-                            <div id="device-info" style="font-size: 0.8rem; color: #ccc;"></div>
-                            <div id="performance-estimate" style="font-size: 0.8rem; color: #00d4ff;"></div>
+                    <div class="control-section-content">
+                        <div class="parameter-group">
+                            <h4>WebGPU Status</h4>
+                            <div id="webgpu-detailed-status">
+                                <div id="backend-type">Backend: Checking...</div>
+                                <div id="device-info" style="font-size: 0.8rem; color: #ccc;"></div>
+                                <div id="performance-estimate" style="font-size: 0.8rem; color: #00d4ff;"></div>
+                            </div>
+                            <button id="refresh-webgpu" style="margin-top: 8px;">Refresh WebGPU Status</button>
                         </div>
-                        <button id="refresh-webgpu" style="margin-top: 8px;">Refresh WebGPU Status</button>
                     </div>
                 </div>
                 
-                <div class="control-section">
+                <div class="control-section collapsed">
                     <h3>Performance Metrics</h3>
-                    <div id="fps-counter">FPS: --</div>
-                    <div id="training-step">Step: 0</div>
-                    <div id="episode-count">Episode: 0</div>
-                    <div id="best-score">Best Score: 0</div>
-                    <div id="current-reward">Current Reward: 0</div>
-                    <div id="epsilon-display">Epsilon: --</div>
-                    <div id="backend-performance" style="font-size: 0.8rem; color: #00d4ff; margin-top: 8px;"></div>
+                    <div class="control-section-content">
+                        <div id="fps-counter">FPS: --</div>
+                        <div id="training-step">Step: 0</div>
+                        <div id="episode-count">Episode: 0</div>
+                        <div id="best-score">Best Score: 0</div>
+                        <div id="current-reward">Current Reward: 0</div>
+                        <div id="epsilon-display">Epsilon: --</div>
+                        <div id="backend-performance" style="font-size: 0.8rem; color: #00d4ff; margin-top: 8px;"></div>
+                    </div>
                 </div>
+            </div>
+            
+            <div id="charts-panel">
+                <!-- Performance charts will be dynamically generated here -->
+                <canvas id="reward-chart" style="height: 150px; width: 100%;"></canvas>
+                <canvas id="loss-chart" style="height: 150px; width: 100%;"></canvas>
+                <canvas id="qvalue-chart" style="height: 150px; width: 100%;"></canvas>
+                <canvas id="epsilon-chart" style="height: 150px; width: 100%;"></canvas>
             </div>
         </div>
         

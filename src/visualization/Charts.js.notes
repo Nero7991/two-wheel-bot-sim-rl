@@ -1,0 +1,26 @@
+File: Charts.js
+Purpose: Real-time performance charting system for training metrics visualization
+
+Recent Changes:
+- Created new module with BaseChart and PerformanceCharts classes
+- Implemented canvas-based line charts for optimal performance
+- Added support for episode rewards, training loss, Q-values, and epsilon tracking
+- Configured rolling window of last 100 data points for memory efficiency
+- Added automatic Y-axis scaling and grid visualization
+
+Key Components:
+- BaseChart: Core charting functionality with coordinate transformation and rendering
+- PerformanceCharts: Manager class for multiple chart instances with unified interface
+- Auto-scaling Y-axis with padding and minimum range enforcement
+- Background grid and axis rendering with labels
+
+Dependencies:
+- No external dependencies (vanilla JavaScript with Canvas API)
+- Designed for integration with RL training loop and metrics collection
+
+Architecture Notes:
+- Uses requestAnimationFrame for smooth 60 FPS chart updates
+- Implements efficient data management with configurable point limits
+- Supports data export/import for session persistence
+- Modular design allows easy addition of new chart types
+- Canvas-based rendering optimized for real-time data streams

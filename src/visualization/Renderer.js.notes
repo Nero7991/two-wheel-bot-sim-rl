@@ -1,0 +1,29 @@
+File: Renderer.js
+Purpose: 2D Canvas visualization renderer for the robot simulation
+
+Recent Changes:
+- Fixed wheel rotation direction by removing negation in wheelRotation calculation
+- Enhanced drawGround() with improved surface texture and visibility
+- Added chevron/arrow pattern on ground surface for better movement reference
+- Added wheel circumference-based grid lines for distance measurement
+- Added colored rotation markers (red/blue dots) on wheels for clear motion indication
+- Replaced random dot texture with structured chevron pattern pointing right
+- Improved ground line prominence with brighter color and thicker stroke
+
+Key Components:
+- drawWheels(): Renders realistic wheel with visual rotation markers and physics-accurate size
+- drawGround(): Enhanced surface with directional patterns and measurement grids
+- drawRobot(): Fixed positioning for physically accurate wheel placement
+- drawTorqueIndicators(): Shows motor torque visual feedback
+
+Dependencies:
+- physics/BalancingRobot.js: Gets wheelAngle and wheelRadius for accurate visualization
+- main.js: Receives robot state and config updates for rendering
+
+Architecture Notes:
+- Enhanced visual feedback for wheel rotation with red/blue markers at different positions
+- Ground surface now features chevron pattern for intuitive direction indication
+- Grid lines aligned with wheel circumference help visualize rolling distance
+- Fixed wheel rotation to match physics: positive velocity = clockwise, negative velocity = counter-clockwise
+- All visual elements scale properly with different canvas resolutions (1280x800, 1920x1080)
+- Improved surface texture makes rolling motion more intuitive and measurable
