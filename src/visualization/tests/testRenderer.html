@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Renderer Test - Two-Wheel Balancing Robot</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        
+        #test-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        #canvas-container {
+            border: 2px solid #404040;
+            border-radius: 8px;
+            background-color: #0a0a0a;
+        }
+        
+        #test-canvas {
+            display: block;
+        }
+        
+        #controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        button {
+            background-color: #404040;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: #505050;
+        }
+        
+        button.active {
+            background-color: #00d4ff;
+            color: #000000;
+        }
+        
+        #test-results {
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 800px;
+            margin-top: 20px;
+        }
+        
+        .test-result {
+            margin: 5px 0;
+            font-family: monospace;
+        }
+        
+        .test-pass {
+            color: #00ff88;
+        }
+        
+        .test-fail {
+            color: #ff4444;
+        }
+        
+        #performance-info {
+            background-color: #2d2d2d;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>2D Renderer Test - Two-Wheel Balancing Robot</h1>
+    
+    <div id="test-container">
+        <div id="canvas-container">
+            <canvas id="test-canvas" width="800" height="600"></canvas>
+        </div>
+        
+        <div id="controls">
+            <button id="start-physics">Physics Demo</button>
+            <button id="start-training">Training Demo</button>
+            <button id="start-evaluation">Evaluation Demo</button>
+            <button id="stop-demo">Stop</button>
+            <button id="run-tests">Run Tests</button>
+            <button id="toggle-grid">Toggle Grid</button>
+            <button id="toggle-debug">Toggle Debug</button>
+        </div>
+        
+        <div id="performance-info">
+            <div>Renderer Status: <span id="status">Not Started</span></div>
+            <div>Demo Mode: <span id="mode">None</span></div>
+            <div>FPS: <span id="fps">--</span></div>
+            <div>Frame Time: <span id="frame-time">--</span></div>
+        </div>
+        
+        <div id="test-results" style="display: none;">
+            <h3>Test Results</h3>
+            <div id="test-output"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { VisualizationExample } from '../example.js';
+        import { runRendererTests } from './RendererTests.js';
+        
+        let demo = null;
+        let currentMode = null;
+        
+        // Initialize demo
+        try {
+            demo = new VisualizationExample('test-canvas');
+            document.getElementById('status').textContent = 'Ready';
+        } catch (error) {
+            console.error('Failed to initialize demo:', error);
+            document.getElementById('status').textContent = 'Error: ' + error.message;
+        }
+        
+        // Control handlers
+        document.getElementById('start-physics').addEventListener('click', async () => {
+            if (demo) {
+                await demo.start('physics');
+                setActiveMode('physics');
+                updateStatus();
+            }
+        });
+        
+        document.getElementById('start-training').addEventListener('click', async () => {
+            if (demo) {
+                await demo.start('training');
+                setActiveMode('training');
+                updateStatus();
+            }
+        });
+        
+        document.getElementById('start-evaluation').addEventListener('click', async () => {
+            if (demo) {
+                await demo.start('evaluation');
+                setActiveMode('evaluation');
+                updateStatus();
+            }
+        });
+        
+        document.getElementById('stop-demo').addEventListener('click', () => {
+            if (demo) {
+                demo.stop();
+                setActiveMode(null);
+                updateStatus();
+            }
+        });
+        
+        document.getElementById('run-tests').addEventListener('click', async () => {
+            const resultsDiv = document.getElementById('test-results');
+            const outputDiv = document.getElementById('test-output');
+            
+            resultsDiv.style.display = 'block';
+            outputDiv.innerHTML = '<div>Running tests...</div>';
+            
+            try {
+                const results = await runRendererTests();
+                
+                let html = `<div class="test-result">Total: ${results.total}, Passed: ${results.passed}, Failed: ${results.failed}</div>`;
+                html += `<div class="test-result">Success Rate: ${results.successRate.toFixed(1)}%</div><br>`;
+                
+                results.results.forEach(result => {
+                    const className = result.status === 'PASS' ? 'test-pass' : 'test-fail';
+                    html += `<div class="test-result ${className}">${result.status === 'PASS' ? '✓' : '✗'} ${result.name}`;
+                    if (result.error) {
+                        html += `: ${result.error}`;
+                    }
+                    html += '</div>';
+                });
+                
+                outputDiv.innerHTML = html;
+            } catch (error) {
+                outputDiv.innerHTML = `<div class="test-fail">Test failed: ${error.message}</div>`;
+            }
+        });
+        
+        document.getElementById('toggle-grid').addEventListener('click', () => {
+            if (demo && demo.renderer) {
+                demo.renderer.config.showGrid = !demo.renderer.config.showGrid;
+                console.log('Grid toggled:', demo.renderer.config.showGrid);
+            }
+        });
+        
+        document.getElementById('toggle-debug').addEventListener('click', () => {
+            if (demo && demo.renderer) {
+                demo.renderer.toggleUI('robot');
+                demo.renderer.toggleUI('training');
+                console.log('Debug info toggled');
+            }
+        });
+        
+        // Handle canvas resize
+        window.addEventListener('resize', () => {
+            if (demo) {
+                demo.handleResize();
+            }
+        });
+        
+        // Update status display
+        function updateStatus() {
+            if (demo) {
+                const stats = demo.getStats();
+                document.getElementById('status').textContent = stats.isRunning ? 'Running' : 'Stopped';
+                document.getElementById('mode').textContent = stats.mode || 'None';
+                
+                if (stats.rendererStats && stats.rendererStats.performance) {
+                    document.getElementById('fps').textContent = stats.rendererStats.performance.fps;
+                    document.getElementById('frame-time').textContent = stats.rendererStats.performance.avgFrameTime + 'ms';
+                }
+            }
+        }
+        
+        // Set active mode button
+        function setActiveMode(mode) {
+            currentMode = mode;
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('#controls button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to current mode button
+            if (mode) {
+                const buttonId = `start-${mode}`;
+                const button = document.getElementById(buttonId);
+                if (button) {
+                    button.classList.add('active');
+                }
+            }
+        }
+        
+        // Update status periodically
+        setInterval(updateStatus, 1000);
+        
+        // Initial status update
+        updateStatus();
+        
+        console.log('Renderer test page loaded successfully');
+        console.log('Available controls:', {
+            'Physics Demo': 'Simple PD controller balancing',
+            'Training Demo': 'Q-learning training visualization',
+            'Evaluation Demo': 'Trained agent evaluation',
+            'Run Tests': 'Execute renderer test suite',
+            'Toggle Grid': 'Show/hide coordinate grid',
+            'Toggle Debug': 'Show/hide debug information'
+        });
+    </script>
+</body>
+</html>

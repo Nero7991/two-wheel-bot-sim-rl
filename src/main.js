@@ -1,27 +1,26 @@
 /**
  * Main entry point for Two-Wheel Balancing Robot RL Web Application
- * WebGPU-accelerated machine learning environment
+ * WebGPU-accelerated machine learning environment with 2D visualization
  */
 
+// Core module imports
+import { createRenderer } from './visualization/Renderer.js';
+import { createDefaultRobot } from './physics/BalancingRobot.js';
+import { createDefaultQLearning } from './training/QLearning.js';
+
 // Module imports (will be implemented in subsequent phases)
-// import { PhysicsEngine } from './physics/PhysicsEngine.js';
-// import { NeuralNetwork } from './network/NeuralNetwork.js';
-// import { TrainingManager } from './training/TrainingManager.js';
-// import { Visualizer } from './visualization/Visualizer.js';
 // import { ModelExporter } from './export/ModelExporter.js';
 
 class TwoWheelBotRL {
     constructor() {
         this.canvas = null;
-        this.ctx = null;
+        this.renderer = null;
         this.webgpuDevice = null;
         this.isInitialized = false;
-        this.animationId = null;
         
-        // Performance tracking
-        this.frameCount = 0;
-        this.lastFpsTime = performance.now();
-        this.fps = 0;
+        // Core components
+        this.robot = null;
+        this.qlearning = null;
         
         // Application state
         this.isTraining = false;
@@ -29,6 +28,14 @@ class TwoWheelBotRL {
         this.trainingStep = 0;
         this.episodeCount = 0;
         this.bestScore = 0;
+        this.currentReward = 0;
+        
+        // Demo modes
+        this.demoMode = 'physics'; // 'physics', 'training', 'evaluation'
+        
+        // Physics simulation timing
+        this.lastPhysicsUpdate = 0;
+        this.physicsUpdateInterval = 20; // 50 Hz physics updates
     }
 
     async initialize() {
@@ -38,8 +45,11 @@ class TwoWheelBotRL {
             // Show loading screen
             this.showLoading(true);
             
-            // Initialize canvas and context
-            this.initializeCanvas();
+            // Initialize canvas and renderer
+            this.initializeRenderer();
+            
+            // Initialize physics and ML components
+            await this.initializeComponents();
             
             // Check WebGPU availability and initialize
             await this.initializeWebGPU();
@@ -47,8 +57,8 @@ class TwoWheelBotRL {
             // Initialize UI controls
             this.initializeControls();
             
-            // Start render loop
-            this.startRenderLoop();
+            // Start simulation and rendering
+            this.startSimulation();
             
             this.isInitialized = true;
             console.log('Application initialized successfully!');
@@ -61,24 +71,27 @@ class TwoWheelBotRL {
         }
     }
 
-    initializeCanvas() {
+    initializeRenderer() {
         this.canvas = document.getElementById('simulation-canvas');
         if (!this.canvas) {
             throw new Error('Canvas element not found');
         }
         
-        this.ctx = this.canvas.getContext('2d');
-        if (!this.ctx) {
-            throw new Error('Failed to get 2D context');
-        }
-        
         // Set canvas size to fill available space
         this.resizeCanvas();
+        
+        // Initialize 2D renderer
+        this.renderer = createRenderer(this.canvas, {
+            showGrid: true,
+            showDebugInfo: true,
+            showPerformance: true,
+            targetFPS: 60
+        });
         
         // Add resize listener
         window.addEventListener('resize', () => this.resizeCanvas());
         
-        console.log('Canvas initialized:', this.canvas.width, 'x', this.canvas.height);
+        console.log('Renderer initialized:', this.canvas.width, 'x', this.canvas.height);
     }
 
     async initializeWebGPU() {
@@ -132,18 +145,17 @@ class TwoWheelBotRL {
         
         // Visualization controls
         document.getElementById('toggle-physics').addEventListener('click', () => {
-            console.log('Toggle physics debug view');
-            // Will be implemented in physics module
+            this.switchDemoMode('physics');
         });
         
         document.getElementById('toggle-network').addEventListener('click', () => {
-            console.log('Toggle network visualization');
-            // Will be implemented in visualization module
+            this.renderer.toggleUI('robot');
+            console.log('Toggled robot info display');
         });
         
         document.getElementById('toggle-metrics').addEventListener('click', () => {
-            console.log('Toggle metrics display');
-            // Will be implemented in visualization module
+            this.renderer.toggleUI('training');
+            console.log('Toggled training metrics display');
         });
         
         // Model management controls
@@ -165,17 +177,28 @@ class TwoWheelBotRL {
         console.log('Controls initialized');
     }
 
-    startTraining() {
+    async startTraining() {
         if (this.isTraining) return;
+        
+        // Initialize Q-learning if not already done
+        if (!this.qlearning) {
+            await this.initializeQLearning();
+        }
         
         this.isTraining = true;
         this.isPaused = false;
+        this.demoMode = 'training';
+        
+        // Reset for new training session
+        this.episodeCount = 0;
+        this.trainingStep = 0;
+        this.bestScore = -Infinity;
+        this.startNewEpisode();
         
         document.getElementById('start-training').disabled = true;
         document.getElementById('pause-training').disabled = false;
         
         console.log('Training started');
-        // Training logic will be implemented in training module
     }
 
     pauseTraining() {
@@ -194,6 +217,18 @@ class TwoWheelBotRL {
         this.isPaused = false;
         this.trainingStep = 0;
         this.episodeCount = 0;
+        this.bestScore = 0;
+        this.currentReward = 0;
+        
+        // Reset robot state
+        if (this.robot) {
+            this.robot.reset({
+                angle: (Math.random() - 0.5) * 0.1,
+                angularVelocity: 0,
+                position: 0,
+                velocity: 0
+            });
+        }
         
         document.getElementById('start-training').disabled = false;
         document.getElementById('pause-training').disabled = true;
@@ -202,7 +237,6 @@ class TwoWheelBotRL {
         this.updateUI();
         
         console.log('Environment reset');
-        // Reset logic will be implemented in physics and training modules
     }
 
     resizeCanvas() {
@@ -212,90 +246,112 @@ class TwoWheelBotRL {
         const availableWidth = container.clientWidth - controlsPanel.clientWidth;
         const availableHeight = container.clientHeight;
         
-        this.canvas.width = Math.max(800, availableWidth - 2); // Account for border
-        this.canvas.height = Math.max(600, availableHeight - 2);
+        const newWidth = Math.max(800, availableWidth - 2);
+        const newHeight = Math.max(600, availableHeight - 2);
         
-        console.log('Canvas resized to:', this.canvas.width, 'x', this.canvas.height);
+        if (this.renderer) {
+            this.renderer.resize(newWidth, newHeight);
+        } else {
+            this.canvas.width = newWidth;
+            this.canvas.height = newHeight;
+        }
+        
+        console.log('Canvas resized to:', newWidth, 'x', newHeight);
     }
 
-    startRenderLoop() {
-        const render = (timestamp) => {
-            this.update(timestamp);
-            this.draw();
-            this.updateFPS(timestamp);
+    startSimulation() {
+        // Start the renderer
+        this.renderer.start();
+        
+        // Start physics simulation loop
+        const simulate = (timestamp) => {
+            if (!this.isInitialized) return;
             
-            this.animationId = requestAnimationFrame(render);
+            // Update physics at fixed intervals
+            if (timestamp - this.lastPhysicsUpdate >= this.physicsUpdateInterval) {
+                this.updatePhysics();
+                this.updateRenderer();
+                this.updateUI();
+                this.lastPhysicsUpdate = timestamp;
+            }
+            
+            requestAnimationFrame(simulate);
         };
         
-        this.animationId = requestAnimationFrame(render);
-        console.log('Render loop started');
+        requestAnimationFrame(simulate);
+        console.log('Simulation started');
     }
 
-    update(timestamp) {
-        // Update simulation state
+    updatePhysics() {
+        if (!this.robot) return;
+        
+        let motorTorque = 0;
+        
+        // Get motor torque based on current mode
+        switch (this.demoMode) {
+            case 'physics':
+                motorTorque = this.getPhysicsDemoTorque();
+                break;
+            case 'training':
+                if (this.isTraining && !this.isPaused) {
+                    motorTorque = this.getTrainingTorque();
+                }
+                break;
+            case 'evaluation':
+                motorTorque = this.getEvaluationTorque();
+                break;
+        }
+        
+        // Step physics simulation
+        const result = this.robot.step(motorTorque);
+        this.currentReward = result.reward;
+        
+        // Handle episode completion for training/evaluation
+        if (result.done && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+            this.handleEpisodeEnd(result);
+        }
+        
+        // Update training step counter
         if (this.isTraining && !this.isPaused) {
             this.trainingStep++;
-            
-            // Placeholder training logic
-            if (this.trainingStep % 1000 === 0) {
-                this.episodeCount++;
-                this.updateUI();
-            }
         }
-        
-        // Update physics, neural network, etc. (will be implemented in modules)
     }
 
-    draw() {
-        // Clear canvas
-        this.ctx.fillStyle = '#0a0a0a';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    updateRenderer() {
+        if (!this.renderer || !this.robot) return;
         
-        // Draw placeholder content
-        this.drawPlaceholder();
+        const state = this.robot.getState();
+        const config = this.robot.getConfig();
+        const stats = this.robot.getStats();
         
-        // Draw UI overlays (will be implemented in visualization module)
-    }
-
-    drawPlaceholder() {
-        const centerX = this.canvas.width / 2;
-        const centerY = this.canvas.height / 2;
+        // Update robot visualization
+        this.renderer.updateRobot(state, config, stats.currentMotorTorque);
         
-        // Draw a simple robot placeholder
-        this.ctx.fillStyle = '#00d4ff';
-        this.ctx.fillRect(centerX - 20, centerY - 10, 40, 20);
+        // Update training metrics
+        const trainingMetrics = {
+            episode: this.episodeCount,
+            step: this.trainingStep,
+            reward: this.currentReward,
+            totalReward: stats.totalReward,
+            bestReward: this.bestScore,
+            epsilon: this.qlearning ? this.qlearning.hyperparams.epsilon : 0,
+            isTraining: this.isTraining,
+            trainingMode: this.demoMode
+        };
         
-        // Draw wheels
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.beginPath();
-        this.ctx.arc(centerX - 15, centerY + 15, 8, 0, Math.PI * 2);
-        this.ctx.arc(centerX + 15, centerY + 15, 8, 0, Math.PI * 2);
-        this.ctx.fill();
-        
-        // Draw status text
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '16px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('Two-Wheel Balancing Robot', centerX, centerY - 40);
-        this.ctx.fillText('Physics and ML modules will be implemented in next phases', centerX, centerY + 60);
-    }
-
-    updateFPS(timestamp) {
-        this.frameCount++;
-        
-        if (timestamp - this.lastFpsTime >= 1000) {
-            this.fps = Math.round(this.frameCount * 1000 / (timestamp - this.lastFpsTime));
-            this.frameCount = 0;
-            this.lastFpsTime = timestamp;
-            
-            document.getElementById('fps-counter').textContent = `FPS: ${this.fps}`;
-        }
+        this.renderer.updateTraining(trainingMetrics);
     }
 
     updateUI() {
         document.getElementById('training-step').textContent = `Step: ${this.trainingStep.toLocaleString()}`;
         document.getElementById('episode-count').textContent = `Episode: ${this.episodeCount}`;
-        document.getElementById('best-score').textContent = `Best Score: ${this.bestScore}`;
+        document.getElementById('best-score').textContent = `Best Score: ${this.bestScore.toFixed(1)}`;
+        
+        // Update FPS from renderer performance
+        if (this.renderer) {
+            const perfMetrics = this.renderer.performance.getMetrics();
+            document.getElementById('fps-counter').textContent = `FPS: ${perfMetrics.fps}`;
+        }
     }
 
     showLoading(show) {
@@ -309,9 +365,9 @@ class TwoWheelBotRL {
     }
 
     destroy() {
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = null;
+        if (this.renderer) {
+            this.renderer.destroy();
+            this.renderer = null;
         }
         
         if (this.webgpuDevice) {
@@ -319,7 +375,180 @@ class TwoWheelBotRL {
             this.webgpuDevice = null;
         }
         
+        this.robot = null;
+        this.qlearning = null;
+        
         console.log('Application destroyed');
+    }
+    
+    /**
+     * Initialize physics and ML components
+     */
+    async initializeComponents() {
+        // Initialize robot physics
+        this.robot = createDefaultRobot({
+            mass: 1.0,
+            centerOfMassHeight: 0.4,
+            motorStrength: 5.0,
+            friction: 0.1,
+            damping: 0.05
+        });
+        
+        // Reset robot to initial state
+        this.robot.reset({
+            angle: (Math.random() - 0.5) * 0.1, // Small random initial angle
+            angularVelocity: 0,
+            position: 0,
+            velocity: 0
+        });
+        
+        console.log('Physics components initialized');
+    }
+    
+    /**
+     * Initialize Q-learning for training
+     */
+    async initializeQLearning() {
+        this.qlearning = createDefaultQLearning({
+            learningRate: 0.001,
+            epsilon: 0.3,
+            epsilonDecay: 0.995,
+            maxEpisodes: 1000,
+            maxStepsPerEpisode: 1000,
+            hiddenSize: 8
+        });
+        
+        await this.qlearning.initialize();
+        console.log('Q-learning initialized');
+    }
+    
+    /**
+     * Get motor torque for physics demo (simple balancing controller)
+     */
+    getPhysicsDemoTorque() {
+        const state = this.robot.getState();
+        
+        // Simple PD controller for demonstration
+        const kp = 50; // Proportional gain
+        const kd = 10; // Derivative gain
+        
+        const torque = -(kp * state.angle + kd * state.angularVelocity);
+        
+        // Add some noise for more interesting behavior
+        const noise = (Math.random() - 0.5) * 0.5;
+        
+        return Math.max(-5, Math.min(5, torque + noise));
+    }
+    
+    /**
+     * Get motor torque from Q-learning during training
+     */
+    getTrainingTorque() {
+        if (!this.qlearning) return 0;
+        
+        const state = this.robot.getState();
+        const normalizedState = state.getNormalizedInputs();
+        
+        // Select action using epsilon-greedy policy
+        const actionIndex = this.qlearning.selectAction(normalizedState, true);
+        const actions = [-3.0, 0.0, 3.0]; // Left, brake, right
+        
+        return actions[actionIndex];
+    }
+    
+    /**
+     * Get motor torque from trained Q-learning (evaluation mode)
+     */
+    getEvaluationTorque() {
+        if (!this.qlearning) return 0;
+        
+        const state = this.robot.getState();
+        const normalizedState = state.getNormalizedInputs();
+        
+        // Select best action (no exploration)
+        const actionIndex = this.qlearning.selectAction(normalizedState, false);
+        const actions = [-3.0, 0.0, 3.0];
+        
+        return actions[actionIndex];
+    }
+    
+    /**
+     * Start a new training episode
+     */
+    startNewEpisode() {
+        this.trainingStep = 0;
+        
+        // Reset robot with small random perturbation
+        this.robot.reset({
+            angle: (Math.random() - 0.5) * 0.2,
+            angularVelocity: (Math.random() - 0.5) * 0.5,
+            position: 0,
+            velocity: 0
+        });
+        
+        console.log(`Starting episode ${this.episodeCount + 1}`);
+    }
+    
+    /**
+     * Handle end of training/evaluation episode
+     */
+    handleEpisodeEnd(result) {
+        const totalReward = this.robot.getStats().totalReward;
+        
+        // Update best score
+        if (totalReward > this.bestScore) {
+            this.bestScore = totalReward;
+        }
+        
+        this.episodeCount++;
+        
+        if (this.demoMode === 'training' && this.isTraining) {
+            console.log(`Episode ${this.episodeCount} completed: Reward=${totalReward.toFixed(2)}, Steps=${this.trainingStep}`);
+            
+            // Start next episode after brief pause
+            setTimeout(() => {
+                if (this.isTraining && this.episodeCount < 100) { // Limit for demo
+                    this.startNewEpisode();
+                }
+            }, 100);
+        } else {
+            // Evaluation mode or demo - restart after longer pause
+            setTimeout(() => {
+                this.robot.reset({
+                    angle: (Math.random() - 0.5) * 0.2,
+                    angularVelocity: 0,
+                    position: 0,
+                    velocity: 0
+                });
+                this.trainingStep = 0;
+            }, 1000);
+        }
+    }
+    
+    /**
+     * Switch demo mode
+     */
+    async switchDemoMode(newMode) {
+        console.log(`Switching from ${this.demoMode} to ${newMode} mode`);
+        
+        // Stop training if switching away from training mode
+        if (this.demoMode === 'training' && newMode !== 'training') {
+            this.isTraining = false;
+            this.isPaused = false;
+            document.getElementById('start-training').disabled = false;
+            document.getElementById('pause-training').disabled = true;
+            document.getElementById('pause-training').textContent = 'Pause Training';
+        }
+        
+        this.demoMode = newMode;
+        
+        // Initialize Q-learning if switching to training or evaluation mode
+        if ((newMode === 'training' || newMode === 'evaluation') && !this.qlearning) {
+            await this.initializeQLearning();
+        }
+        
+        // Reset environment for new mode
+        this.resetEnvironment();
     }
 }
 

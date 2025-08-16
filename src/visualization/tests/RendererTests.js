@@ -1,0 +1,73 @@
+/**
+ * Test suite for 2D Renderer functionality
+ * Tests performance, rendering accuracy, and integration
+ */
+
+import { createRenderer, CoordinateTransform, PerformanceMonitor } from '../Renderer.js';
+import { createDefaultRobot } from '../../physics/BalancingRobot.js';
+
+/**
+ * Test suite for the 2D visualization renderer
+ */
+export class RendererTests {
+    constructor() {
+        this.testResults = [];
+        this.totalTests = 0;
+        this.passedTests = 0;
+    }
+    
+    /**
+     * Run all renderer tests
+     */
+    async runAllTests() {
+        console.log('Starting Renderer Tests...');
+        
+        // Basic functionality tests
+        this.testCoordinateTransform();
+        this.testPerformanceMonitor();
+        this.testRendererInitialization();
+        this.testRendererConfiguration();
+        
+        // Integration tests
+        await this.testRobotVisualization();
+        await this.testTrainingVisualization();
+        
+        // Performance tests
+        await this.testRenderingPerformance();
+        
+        this.printResults();
+        return this.getResults();
+    }
+    
+    /**
+     * Test coordinate transformation
+     */
+    testCoordinateTransform() {
+        this.test('Coordinate Transform', () => {
+            const transform = new CoordinateTransform(800, 600);
+            
+            // Test basic transformation
+            const screenPos = transform.physicsToScreen(0, 0);
+            this.assert(screenPos.x === 400, 'Center X should be 400');
+            this.assert(screenPos.y === 420, 'Center Y should be 70% down (420)'); // 600 * 0.7
+            
+            // Test reverse transformation
+            const physicsPos = transform.screenToPhysics(400, 420);
+            this.assert(Math.abs(physicsPos.x) < 0.001, 'Physics X should be ~0');
+            this.assert(Math.abs(physicsPos.y) < 0.001, 'Physics Y should be ~0');
+            
+            // Test scaling
+            const length = transform.scaleLength(1.0); // 1 meter
+            this.assert(length === 100, 'Scale should be 100 pixels per meter');
+            
+            // Test resize
+            transform.resize(1200, 800);
+            this.assert(transform.centerX === 600, 'New center X should be 600');
+            this.assert(transform.centerY === 560, 'New center Y should be 560'); // 800 * 0.7
+        });
+    }
+    
+    /**
+     * Test performance monitor
+     */
+    testPerformanceMonitor() {\n        this.test('Performance Monitor', () => {\n            const monitor = new PerformanceMonitor();\n            \n            // Initial state\n            this.assert(monitor.fps === 60, 'Initial FPS should be 60');\n            this.assert(monitor.frameTime === 16.67, 'Initial frame time should be 16.67ms');\n            \n            // Test metrics\n            const metrics = monitor.getMetrics();\n            this.assert(typeof metrics.fps === 'number', 'FPS should be a number');\n            this.assert(typeof metrics.avgFrameTime === 'string', 'Avg frame time should be a string');\n            \n            // Test performance check\n            this.assert(monitor.isPerformanceGood() === true, 'Initial performance should be good');\n        });\n    }\n    \n    /**\n     * Test renderer initialization\n     */\n    testRendererInitialization() {\n        this.test('Renderer Initialization', () => {\n            // Create a mock canvas\n            const canvas = this.createMockCanvas();\n            const renderer = createRenderer(canvas);\n            \n            this.assert(renderer !== null, 'Renderer should be created');\n            this.assert(renderer.canvas === canvas, 'Renderer should reference the canvas');\n            this.assert(renderer.transform !== null, 'Transform should be initialized');\n            this.assert(renderer.performance !== null, 'Performance monitor should be initialized');\n            this.assert(renderer.isRendering === false, 'Should not be rendering initially');\n            \n            // Test configuration\n            this.assert(renderer.config.targetFPS === 60, 'Default target FPS should be 60');\n            this.assert(renderer.config.showGrid === true, 'Default showGrid should be true');\n            \n            renderer.destroy();\n        });\n    }\n    \n    /**\n     * Test renderer configuration\n     */\n    testRendererConfiguration() {\n        this.test('Renderer Configuration', () => {\n            const canvas = this.createMockCanvas();\n            const customConfig = {\n                targetFPS: 30,\n                showGrid: false,\n                backgroundColor: '#ff0000',\n                robotColor: '#00ff00'\n            };\n            \n            const renderer = createRenderer(canvas, customConfig);\n            \n            this.assert(renderer.config.targetFPS === 30, 'Custom target FPS should be set');\n            this.assert(renderer.config.showGrid === false, 'Custom showGrid should be set');\n            this.assert(renderer.config.backgroundColor === '#ff0000', 'Custom background color should be set');\n            this.assert(renderer.config.robotColor === '#00ff00', 'Custom robot color should be set');\n            \n            // Test configuration update\n            renderer.updateConfig({ targetFPS: 120 });\n            this.assert(renderer.config.targetFPS === 120, 'Config should be updated');\n            \n            renderer.destroy();\n        });\n    }\n    \n    /**\n     * Test robot visualization\n     */\n    async testRobotVisualization() {\n        await this.testAsync('Robot Visualization', async () => {\n            const canvas = this.createMockCanvas();\n            const renderer = createRenderer(canvas);\n            const robot = createDefaultRobot();\n            \n            // Reset robot to known state\n            robot.reset({\n                angle: Math.PI / 6, // 30 degrees\n                angularVelocity: 1.0,\n                position: 0.5,\n                velocity: 0.2\n            });\n            \n            const state = robot.getState();\n            const config = robot.getConfig();\n            \n            // Update renderer with robot data\n            renderer.updateRobot(state, config, 2.5); // 2.5 N⋅m torque\n            \n            this.assert(renderer.robotState !== null, 'Robot state should be set');\n            this.assert(renderer.robotConfig !== null, 'Robot config should be set');\n            this.assert(renderer.motorTorque === 2.5, 'Motor torque should be set');\n            \n            renderer.destroy();\n        });\n    }\n    \n    /**\n     * Test training visualization\n     */\n    async testTrainingVisualization() {\n        await this.testAsync('Training Visualization', async () => {\n            const canvas = this.createMockCanvas();\n            const renderer = createRenderer(canvas);\n            \n            const trainingMetrics = {\n                episode: 42,\n                step: 1337,\n                reward: 125.5,\n                totalReward: 12550,\n                bestReward: 500,\n                epsilon: 0.1,\n                isTraining: true,\n                trainingMode: 'training'\n            };\n            \n            renderer.updateTraining(trainingMetrics);\n            \n            this.assert(renderer.trainingMetrics.episode === 42, 'Episode should be set');\n            this.assert(renderer.trainingMetrics.step === 1337, 'Step should be set');\n            this.assert(renderer.trainingMetrics.reward === 125.5, 'Reward should be set');\n            this.assert(renderer.trainingMetrics.isTraining === true, 'Training flag should be set');\n            \n            renderer.destroy();\n        });\n    }\n    \n    /**\n     * Test rendering performance\n     */\n    async testRenderingPerformance() {\n        await this.testAsync('Rendering Performance', async () => {\n            const canvas = this.createMockCanvas();\n            const renderer = createRenderer(canvas, { targetFPS: 60 });\n            const robot = createDefaultRobot();\n            \n            // Setup robot state\n            robot.reset();\n            const state = robot.getState();\n            const config = robot.getConfig();\n            renderer.updateRobot(state, config, 0);\n            \n            // Measure rendering performance\n            const startTime = performance.now();\n            const renderCount = 100;\n            \n            for (let i = 0; i < renderCount; i++) {\n                renderer.render();\n                renderer.performance.update();\n            }\n            \n            const endTime = performance.now();\n            const totalTime = endTime - startTime;\n            const avgFrameTime = totalTime / renderCount;\n            \n            console.log(`Rendered ${renderCount} frames in ${totalTime.toFixed(2)}ms`);\n            console.log(`Average frame time: ${avgFrameTime.toFixed(2)}ms`);\n            \n            // Performance assertions\n            this.assert(avgFrameTime < 50, 'Average frame time should be under 50ms');\n            this.assert(totalTime < 5000, 'Total rendering time should be under 5 seconds');\n            \n            const metrics = renderer.performance.getMetrics();\n            this.assert(typeof metrics.fps === 'number', 'FPS should be calculated');\n            \n            renderer.destroy();\n        });\n    }\n    \n    /**\n     * Create a mock canvas for testing\n     */\n    createMockCanvas() {\n        // Create a mock canvas object for testing\n        const mockCanvas = {\n            width: 800,\n            height: 600,\n            getContext: (type) => {\n                if (type === '2d') {\n                    return this.createMockContext2D();\n                }\n                return null;\n            }\n        };\n        \n        return mockCanvas;\n    }\n    \n    /**\n     * Create a mock 2D context for testing\n     */\n    createMockContext2D() {\n        const mockCtx = {\n            fillStyle: '#000000',\n            strokeStyle: '#000000',\n            lineWidth: 1,\n            font: '10px sans-serif',\n            textAlign: 'start',\n            globalAlpha: 1,\n            lineCap: 'butt',\n            \n            fillRect: () => {},\n            strokeRect: () => {},\n            clearRect: () => {},\n            fillText: () => {},\n            strokeText: () => {},\n            beginPath: () => {},\n            moveTo: () => {},\n            lineTo: () => {},\n            arc: () => {},\n            stroke: () => {},\n            fill: () => {},\n            save: () => {},\n            restore: () => {},\n            translate: () => {},\n            rotate: () => {},\n            scale: () => {}\n        };\n        \n        return mockCtx;\n    }\n    \n    /**\n     * Run a test\n     */\n    test(name, testFn) {\n        this.totalTests++;\n        try {\n            testFn();\n            this.testResults.push({ name, status: 'PASS', error: null });\n            this.passedTests++;\n            console.log(`✓ ${name}`);\n        } catch (error) {\n            this.testResults.push({ name, status: 'FAIL', error: error.message });\n            console.error(`✗ ${name}: ${error.message}`);\n        }\n    }\n    \n    /**\n     * Run an async test\n     */\n    async testAsync(name, testFn) {\n        this.totalTests++;\n        try {\n            await testFn();\n            this.testResults.push({ name, status: 'PASS', error: null });\n            this.passedTests++;\n            console.log(`✓ ${name}`);\n        } catch (error) {\n            this.testResults.push({ name, status: 'FAIL', error: error.message });\n            console.error(`✗ ${name}: ${error.message}`);\n        }\n    }\n    \n    /**\n     * Assert a condition\n     */\n    assert(condition, message) {\n        if (!condition) {\n            throw new Error(message || 'Assertion failed');\n        }\n    }\n    \n    /**\n     * Print test results\n     */\n    printResults() {\n        console.log('\\n=== Renderer Test Results ===');\n        console.log(`Total tests: ${this.totalTests}`);\n        console.log(`Passed: ${this.passedTests}`);\n        console.log(`Failed: ${this.totalTests - this.passedTests}`);\n        console.log(`Success rate: ${((this.passedTests / this.totalTests) * 100).toFixed(1)}%`);\n        \n        const failedTests = this.testResults.filter(r => r.status === 'FAIL');\n        if (failedTests.length > 0) {\n            console.log('\\nFailed tests:');\n            failedTests.forEach(test => {\n                console.log(`- ${test.name}: ${test.error}`);\n            });\n        }\n    }\n    \n    /**\n     * Get test results\n     */\n    getResults() {\n        return {\n            total: this.totalTests,\n            passed: this.passedTests,\n            failed: this.totalTests - this.passedTests,\n            successRate: (this.passedTests / this.totalTests) * 100,\n            results: this.testResults\n        };\n    }\n}\n\n/**\n * Run renderer tests\n */\nexport async function runRendererTests() {\n    const tests = new RendererTests();\n    return await tests.runAllTests();\n}\n\n/**\n * Quick performance test for the renderer\n */\nexport async function quickPerformanceTest() {\n    console.log('Running quick renderer performance test...');\n    \n    // This would need a real canvas in a browser environment\n    if (typeof document !== 'undefined') {\n        const canvas = document.createElement('canvas');\n        canvas.width = 800;\n        canvas.height = 600;\n        \n        const renderer = createRenderer(canvas);\n        const robot = createDefaultRobot();\n        \n        robot.reset();\n        renderer.updateRobot(robot.getState(), robot.getConfig(), 0);\n        \n        const startTime = performance.now();\n        for (let i = 0; i < 60; i++) {\n            renderer.render();\n        }\n        const endTime = performance.now();\n        \n        const avgFrameTime = (endTime - startTime) / 60;\n        console.log(`Average frame time: ${avgFrameTime.toFixed(2)}ms`);\n        console.log(`Theoretical max FPS: ${(1000 / avgFrameTime).toFixed(1)}`);\n        \n        renderer.destroy();\n        \n        return {\n            avgFrameTime,\n            theoreticalMaxFPS: 1000 / avgFrameTime\n        };\n    } else {\n        console.log('Performance test requires browser environment');\n        return null;\n    }\n}
