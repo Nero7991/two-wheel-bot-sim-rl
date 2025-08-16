@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Wheel Balancing Robot RL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            overflow: hidden;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #header {
+            background-color: #2d2d2d;
+            padding: 10px 20px;
+            border-bottom: 1px solid #404040;
+        }
+
+        #header h1 {
+            font-size: 1.5rem;
+            color: #00d4ff;
+        }
+
+        #main-container {
+            flex: 1;
+            display: flex;
+            position: relative;
+        }
+
+        #simulation-canvas {
+            background-color: #0a0a0a;
+            border: 1px solid #404040;
+            cursor: crosshair;
+        }
+
+        #controls-panel {
+            background-color: #2d2d2d;
+            width: 300px;
+            border-left: 1px solid #404040;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #webgpu-status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .status-available {
+            color: #00ff88;
+        }
+
+        .status-unavailable {
+            color: #ff4444;
+        }
+
+        .control-section {
+            margin-bottom: 20px;
+        }
+
+        .control-section h3 {
+            color: #00d4ff;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        button {
+            background-color: #404040;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 4px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #505050;
+        }
+
+        button:disabled {
+            background-color: #2a2a2a;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+        }
+
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #00d4ff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+  <script type="module" crossorigin src="/assets/index-pu9YmMFh.js"></script>
+</head>
+<body>
+    <div id="app">
+        <div id="header">
+            <h1>Two-Wheel Balancing Robot RL Environment</h1>
+        </div>
+        
+        <div id="main-container">
+            <canvas id="simulation-canvas" width="1200" height="800"></canvas>
+            
+            <div id="webgpu-status">
+                <span id="webgpu-text">Checking WebGPU...</span>
+            </div>
+            
+            <div id="controls-panel">
+                <div class="control-section">
+                    <h3>Training Control</h3>
+                    <button id="start-training">Start Training</button>
+                    <button id="pause-training" disabled>Pause Training</button>
+                    <button id="reset-environment">Reset Environment</button>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Visualization</h3>
+                    <button id="toggle-physics">Toggle Physics Debug</button>
+                    <button id="toggle-network">Toggle Network View</button>
+                    <button id="toggle-metrics">Toggle Metrics</button>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Model Management</h3>
+                    <button id="save-model">Save Model</button>
+                    <button id="load-model">Load Model</button>
+                    <button id="export-model">Export Model</button>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Performance</h3>
+                    <div id="fps-counter">FPS: --</div>
+                    <div id="training-step">Step: 0</div>
+                    <div id="episode-count">Episode: 0</div>
+                    <div id="best-score">Best Score: 0</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">
+            <div>
+                <div class="spinner"></div>
+                <p style="margin-top: 10px;">Initializing WebGPU...</p>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
