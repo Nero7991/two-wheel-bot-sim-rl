@@ -377,6 +377,19 @@
                 </div>
                 
                 <div class="control-section">
+                    <h3>Backend Information</h3>
+                    <div class="parameter-group">
+                        <h4>WebGPU Status</h4>
+                        <div id="webgpu-detailed-status">
+                            <div id="backend-type">Backend: Checking...</div>
+                            <div id="device-info" style="font-size: 0.8rem; color: #ccc;"></div>
+                            <div id="performance-estimate" style="font-size: 0.8rem; color: #00d4ff;"></div>
+                        </div>
+                        <button id="refresh-webgpu" style="margin-top: 8px;">Refresh WebGPU Status</button>
+                    </div>
+                </div>
+                
+                <div class="control-section">
                     <h3>Performance Metrics</h3>
                     <div id="fps-counter">FPS: --</div>
                     <div id="training-step">Step: 0</div>
@@ -384,6 +397,7 @@
                     <div id="best-score">Best Score: 0</div>
                     <div id="current-reward">Current Reward: 0</div>
                     <div id="epsilon-display">Epsilon: --</div>
+                    <div id="backend-performance" style="font-size: 0.8rem; color: #00d4ff; margin-top: 8px;"></div>
                 </div>
             </div>
         </div>

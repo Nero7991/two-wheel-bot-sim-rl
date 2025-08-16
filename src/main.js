@@ -7,6 +7,7 @@
 import { createRenderer } from './visualization/Renderer.js';
 import { createDefaultRobot } from './physics/BalancingRobot.js';
 import { createDefaultQLearning } from './training/QLearning.js';
+import { WebGPUBackend, checkWebGPUAvailability } from './network/WebGPUBackend.js';
 
 // Module imports (will be implemented in subsequent phases)
 // import { ModelExporter } from './export/ModelExporter.js';
@@ -249,7 +250,7 @@ class TwoWheelBotRL {
     constructor() {
         this.canvas = null;
         this.renderer = null;
-        this.webgpuDevice = null;
+        this.webgpuBackend = null;
         this.isInitialized = false;
         
         // Core components
@@ -280,6 +281,14 @@ class TwoWheelBotRL {
         this.frameTimeHistory = [];
         this.lastFrameTime = 0;
         this.performanceCheckInterval = 60; // Check every 60 frames (~1 second)
+        
+        // WebGPU status tracking
+        this.webgpuStatus = {
+            checked: false,
+            available: false,
+            deviceInfo: null,
+            error: null
+        };
     }
 
     async initialize() {
@@ -295,8 +304,8 @@ class TwoWheelBotRL {
             // Initialize physics and ML components
             await this.initializeComponents();
             
-            // Check WebGPU availability and initialize
-            await this.initializeWebGPU();
+            // Initialize WebGPU backend with CPU fallback
+            await this.initializeWebGPUBackend();
             
             // Initialize UI controls
             this.initializeControls();
@@ -304,6 +313,9 @@ class TwoWheelBotRL {
             // Initialize UI Controls Manager
             this.uiControls = new UIControls(this);
             this.uiControls.initialize();
+            
+            // Update WebGPU status display
+            this.updateWebGPUStatusDisplay();
             
             // Start simulation and rendering
             this.startSimulation();
@@ -342,38 +354,46 @@ class TwoWheelBotRL {
         console.log('Renderer initialized:', this.canvas.width, 'x', this.canvas.height);
     }
 
-    async initializeWebGPU() {
+    async initializeWebGPUBackend() {
         const statusElement = document.getElementById('webgpu-text');
         
         try {
-            if (!navigator.gpu) {
-                throw new Error('WebGPU not supported in this browser');
+            console.log('Initializing WebGPU backend...');
+            statusElement.textContent = 'Initializing WebGPU...';
+            
+            // Create WebGPU backend instance
+            this.webgpuBackend = new WebGPUBackend();
+            
+            // Quick availability check for UI feedback
+            const quickCheck = await checkWebGPUAvailability();
+            this.webgpuStatus.checked = true;
+            this.webgpuStatus.available = quickCheck.available;
+            
+            if (quickCheck.available) {
+                statusElement.textContent = 'WebGPU Available';
+                statusElement.className = 'status-available';
+                console.log('WebGPU availability confirmed:', quickCheck.adapterInfo);
+            } else {
+                statusElement.textContent = 'WebGPU Unavailable (CPU fallback)';
+                statusElement.className = 'status-unavailable';
+                console.log('WebGPU not available:', quickCheck.reason);
+                this.webgpuStatus.error = quickCheck.reason;
             }
             
-            statusElement.textContent = 'Requesting WebGPU adapter...';
-            const adapter = await navigator.gpu.requestAdapter();
-            
-            if (!adapter) {
-                throw new Error('No suitable WebGPU adapter found');
-            }
-            
-            statusElement.textContent = 'Requesting WebGPU device...';
-            this.webgpuDevice = await adapter.requestDevice();
-            
-            statusElement.textContent = 'WebGPU Available';
-            statusElement.className = 'status-available';
-            
-            console.log('WebGPU initialized successfully');
-            console.log('Adapter info:', adapter);
-            console.log('Device limits:', this.webgpuDevice.limits);
+            // Store status for detailed UI display
+            this.webgpuStatus.deviceInfo = quickCheck;
             
         } catch (error) {
-            console.warn('WebGPU initialization failed:', error.message);
-            statusElement.textContent = 'WebGPU Unavailable (CPU fallback)';
+            console.warn('WebGPU backend initialization failed:', error.message);
+            statusElement.textContent = 'WebGPU Error (CPU fallback)';
             statusElement.className = 'status-unavailable';
             
-            // Continue with CPU fallback
-            this.webgpuDevice = null;
+            this.webgpuStatus.checked = true;
+            this.webgpuStatus.available = false;
+            this.webgpuStatus.error = error.message;
+            
+            // Create fallback backend
+            this.webgpuBackend = new WebGPUBackend();
         }
     }
 
@@ -427,6 +447,11 @@ class TwoWheelBotRL {
                 this.uiControls.resetToDefaults();
                 console.log('Parameters reset to defaults');
             }
+        });
+        
+        // WebGPU status refresh
+        document.getElementById('refresh-webgpu').addEventListener('click', () => {
+            this.updateWebGPUStatusDisplay();
         });
         
         console.log('Controls initialized');
@@ -655,6 +680,85 @@ class TwoWheelBotRL {
             const perfMetrics = this.renderer.performance.getMetrics();
             document.getElementById('fps-counter').textContent = `FPS: ${perfMetrics.fps}`;
         }
+        
+        // Update backend performance info
+        this.updateBackendPerformanceDisplay();
+    }
+    
+    /**
+     * Update WebGPU status display with detailed information
+     */
+    updateWebGPUStatusDisplay() {
+        const backendTypeElement = document.getElementById('backend-type');
+        const deviceInfoElement = document.getElementById('device-info');
+        const performanceEstimateElement = document.getElementById('performance-estimate');
+        
+        if (!this.webgpuBackend) {
+            backendTypeElement.textContent = 'Backend: Not initialized';
+            deviceInfoElement.textContent = 'WebGPU backend not yet initialized';
+            performanceEstimateElement.textContent = '';
+            return;
+        }
+        
+        const backendInfo = this.webgpuBackend.getBackendInfo();
+        const deviceInfo = backendInfo.deviceInfo;
+        
+        // Update backend type
+        const backendType = backendInfo.webgpuAvailable ? 'WebGPU' : 'CPU (Fallback)';
+        backendTypeElement.textContent = `Backend: ${backendType}`;
+        
+        // Update device information
+        if (backendInfo.webgpuAvailable && deviceInfo.adapterInfo) {
+            const adapter = deviceInfo.adapterInfo;
+            deviceInfoElement.innerHTML = `
+                <div>Vendor: ${adapter.vendor}</div>
+                <div>Device: ${adapter.device}</div>
+                <div>Architecture: ${adapter.architecture}</div>
+            `;
+        } else if (backendInfo.fallbackReason) {
+            deviceInfoElement.innerHTML = `
+                <div style="color: #ff6666;">Fallback reason:</div>
+                <div>${backendInfo.fallbackReason}</div>
+            `;
+        } else {
+            deviceInfoElement.textContent = 'No detailed device information available';
+        }
+        
+        // Update performance estimate
+        if (backendInfo.capabilities && backendInfo.webgpuAvailable) {
+            const caps = backendInfo.capabilities;
+            performanceEstimateElement.innerHTML = `
+                <div>Estimated speedup: ${caps.estimatedSpeedup.toFixed(1)}x</div>
+                <div>Max workgroup size: ${caps.maxWorkgroupSize || 'Unknown'}</div>
+                <div>Max buffer size: ${caps.maxBufferSizeMB || 'Unknown'} MB</div>
+            `;
+        } else {
+            performanceEstimateElement.textContent = 'CPU backend - no hardware acceleration';
+        }
+        
+        console.log('WebGPU status display updated');
+    }
+    
+    /**
+     * Update backend performance display
+     */
+    updateBackendPerformanceDisplay() {
+        const performanceElement = document.getElementById('backend-performance');
+        
+        if (!this.webgpuBackend) {
+            performanceElement.textContent = '';
+            return;
+        }
+        
+        const perfMetrics = this.webgpuBackend.getPerformanceMetrics();
+        
+        if (perfMetrics.totalForwardPasses > 0) {
+            const avgTime = perfMetrics.averageForwardTime.toFixed(2);
+            const speedup = perfMetrics.estimatedSpeedup.toFixed(1);
+            performanceElement.textContent = `Avg forward pass: ${avgTime}ms | Est. speedup: ${speedup}x`;
+        } else {
+            performanceElement.textContent = 'No performance data yet';
+        }
     }
 
     showLoading(show) {
@@ -673,9 +777,9 @@ class TwoWheelBotRL {
             this.renderer = null;
         }
         
-        if (this.webgpuDevice) {
-            this.webgpuDevice.destroy();
-            this.webgpuDevice = null;
+        if (this.webgpuBackend) {
+            this.webgpuBackend.destroy();
+            this.webgpuBackend = null;
         }
         
         this.robot = null;
@@ -712,7 +816,7 @@ class TwoWheelBotRL {
     }
     
     /**
-     * Initialize Q-learning for training
+     * Initialize Q-learning for training with WebGPU backend
      */
     async initializeQLearning() {
         // Use parameters from UI controls if available
@@ -732,10 +836,27 @@ class TwoWheelBotRL {
             hiddenSize: 8
         };
         
+        // Create Q-learning with WebGPU backend
         this.qlearning = createDefaultQLearning(params);
+        
+        // Initialize with WebGPU backend if available
+        if (this.webgpuBackend) {
+            console.log('Initializing Q-learning with WebGPU backend support...');
+            // Note: Q-learning will use the backend internally
+            // For now, the integration is prepared for when Q-learning supports custom backends
+        }
         
         await this.qlearning.initialize();
         console.log('Q-learning initialized with parameters:', params);
+        
+        // Log backend information
+        if (this.webgpuBackend) {
+            const backendInfo = this.webgpuBackend.getBackendInfo();
+            console.log('Neural network backend:', backendInfo.type);
+            if (backendInfo.usingFallback) {
+                console.log('Fallback reason:', backendInfo.fallbackReason);
+            }
+        }
     }
     
     /**

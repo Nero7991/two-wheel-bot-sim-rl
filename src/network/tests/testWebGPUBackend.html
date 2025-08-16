@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Backend Tests</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .test-controls {
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        button {
+            background-color: #00d4ff;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #00b8e6;
+        }
+
+        button:disabled {
+            background-color: #666;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .status-section {
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .status-section h2 {
+            color: #00d4ff;
+            margin-top: 0;
+        }
+
+        .webgpu-status {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .status-card {
+            background-color: #404040;
+            padding: 15px;
+            border-radius: 6px;
+        }
+
+        .status-card h3 {
+            margin-top: 0;
+            color: #00d4ff;
+            font-size: 16px;
+        }
+
+        .status-available {
+            border-left: 4px solid #00ff88;
+        }
+
+        .status-unavailable {
+            border-left: 4px solid #ff4444;
+        }
+
+        .test-results {
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .test-results h2 {
+            color: #00d4ff;
+            margin-top: 0;
+        }
+
+        .test-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background-color: #404040;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .summary-card .number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+
+        .summary-card .label {
+            font-size: 12px;
+            color: #ccc;
+            margin-top: 5px;
+        }
+
+        .test-list {
+            background-color: #404040;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .test-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #555;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .test-item:last-child {
+            border-bottom: none;
+        }
+
+        .test-name {
+            font-weight: 500;
+        }
+
+        .test-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .test-status.pass {
+            background-color: #00ff88;
+            color: #000;
+        }
+
+        .test-status.fail {
+            background-color: #ff4444;
+            color: #fff;
+        }
+
+        .test-status.error {
+            background-color: #ff8800;
+            color: #fff;
+        }
+
+        .test-status.running {
+            background-color: #00d4ff;
+            color: #000;
+        }
+
+        .error-details {
+            background-color: #3d1a1a;
+            border: 1px solid #ff4444;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #ff9999;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #00d4ff;
+        }
+
+        .spinner {
+            border: 3px solid #333;
+            border-top: 3px solid #00d4ff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .performance-info {
+            background-color: #404040;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+
+        .performance-info h4 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+
+        .performance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .performance-item {
+            background-color: #555;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+
+        .performance-item .label {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        .performance-item .value {
+            font-size: 14px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebGPU Backend Tests</h1>
+        
+        <div class="test-controls">
+            <button id="run-all-tests">Run All Tests</button>
+            <button id="run-webgpu-test">Test WebGPU Only</button>
+            <button id="run-cpu-fallback">Test CPU Fallback</button>
+            <button id="clear-results">Clear Results</button>
+        </div>
+
+        <div class="status-section">
+            <h2>WebGPU Availability</h2>
+            <div class="webgpu-status">
+                <div class="status-card" id="browser-support">
+                    <h3>Browser Support</h3>
+                    <div id="browser-status">Checking...</div>
+                </div>
+                <div class="status-card" id="device-info">
+                    <h3>Device Information</h3>
+                    <div id="device-details">Checking...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-results">
+            <h2>Test Results</h2>
+            <div id="test-summary" class="test-summary" style="display: none;">
+                <div class="summary-card">
+                    <div class="number" id="total-tests">0</div>
+                    <div class="label">Total Tests</div>
+                </div>
+                <div class="summary-card">
+                    <div class="number" id="passed-tests">0</div>
+                    <div class="label">Passed</div>
+                </div>
+                <div class="summary-card">
+                    <div class="number" id="failed-tests">0</div>
+                    <div class="label">Failed</div>
+                </div>
+                <div class="summary-card">
+                    <div class="number" id="success-rate">0%</div>
+                    <div class="label">Success Rate</div>
+                </div>
+            </div>
+
+            <div id="test-list" class="test-list" style="display: none;"></div>
+            
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <div>Running tests...</div>
+            </div>
+
+            <div id="performance-info" class="performance-info" style="display: none;">
+                <h4>Performance Information</h4>
+                <div class="performance-grid" id="performance-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { runWebGPUBackendTests } from './WebGPUBackendTests.js';
+        import { checkWebGPUAvailability, WebGPUBackend } from '../WebGPUBackend.js';
+
+        let testResults = null;
+        let webgpuBackend = null;
+
+        // Check WebGPU availability on page load
+        checkWebGPUStatus();
+
+        // Event listeners
+        document.getElementById('run-all-tests').addEventListener('click', runAllTests);
+        document.getElementById('run-webgpu-test').addEventListener('click', runWebGPUTest);
+        document.getElementById('run-cpu-fallback').addEventListener('click', runCPUFallbackTest);
+        document.getElementById('clear-results').addEventListener('click', clearResults);
+
+        async function checkWebGPUStatus() {
+            try {
+                const result = await checkWebGPUAvailability();
+                
+                const browserStatus = document.getElementById('browser-status');
+                const deviceDetails = document.getElementById('device-details');
+                const browserCard = document.getElementById('browser-support');
+                const deviceCard = document.getElementById('device-info');
+
+                if (result.available) {
+                    browserStatus.innerHTML = '<div style="color: #00ff88;">✓ WebGPU Available</div>';
+                    browserCard.classList.add('status-available');
+                    
+                    if (result.adapterInfo) {
+                        deviceDetails.innerHTML = `
+                            <div>Vendor: ${result.adapterInfo.vendor || 'Unknown'}</div>
+                            <div>Device: ${result.adapterInfo.device || 'Unknown'}</div>
+                        `;
+                        deviceCard.classList.add('status-available');
+                    } else {
+                        deviceDetails.innerHTML = '<div>Device info not available</div>';
+                        deviceCard.classList.add('status-unavailable');
+                    }
+                } else {
+                    browserStatus.innerHTML = `<div style="color: #ff4444;">✗ WebGPU Unavailable</div>`;
+                    deviceDetails.innerHTML = `<div style="color: #ff4444;">Reason: ${result.reason}</div>`;
+                    browserCard.classList.add('status-unavailable');
+                    deviceCard.classList.add('status-unavailable');
+                }
+            } catch (error) {
+                console.error('Error checking WebGPU status:', error);
+                document.getElementById('browser-status').innerHTML = '<div style="color: #ff4444;">Error checking status</div>';
+                document.getElementById('device-details').innerHTML = `<div style="color: #ff4444;">Error: ${error.message}</div>';
+            }
+        }
+
+        async function runAllTests() {
+            showLoading(true);
+            clearTestResults();
+            
+            try {
+                console.log('Starting comprehensive WebGPU backend tests...');
+                testResults = await runWebGPUBackendTests();
+                displayTestResults(testResults);
+                
+                // Also get performance info
+                await getPerformanceInfo();
+                
+            } catch (error) {
+                console.error('Test execution failed:', error);
+                showError('Test execution failed: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function runWebGPUTest() {
+            showLoading(true);
+            clearTestResults();
+            
+            try {
+                console.log('Testing WebGPU backend specifically...');
+                webgpuBackend = new WebGPUBackend();
+                
+                await webgpuBackend.createNetwork(2, 8, 3);
+                
+                const backendInfo = webgpuBackend.getBackendInfo();
+                
+                const testResult = {
+                    totalTests: 1,
+                    passedTests: backendInfo.webgpuAvailable ? 1 : 0,
+                    failedTests: backendInfo.webgpuAvailable ? 0 : 1,
+                    successRate: backendInfo.webgpuAvailable ? 100 : 0,
+                    results: [{
+                        name: 'WebGPU Backend Creation',
+                        status: backendInfo.webgpuAvailable ? 'PASS' : 'FAIL',
+                        error: backendInfo.usingFallback ? backendInfo.fallbackReason : null
+                    }]
+                };
+                
+                displayTestResults(testResult);
+                await getPerformanceInfo();
+                
+            } catch (error) {
+                console.error('WebGPU test failed:', error);
+                showError('WebGPU test failed: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function runCPUFallbackTest() {
+            showLoading(true);
+            clearTestResults();
+            
+            try {
+                console.log('Testing CPU fallback...');
+                const backend = new WebGPUBackend();
+                
+                await backend.createNetwork(2, 8, 3, { forceCPU: true });
+                
+                const backendInfo = backend.getBackendInfo();
+                
+                const testResult = {
+                    totalTests: 1,
+                    passedTests: backendInfo.type === 'cpu' ? 1 : 0,
+                    failedTests: backendInfo.type === 'cpu' ? 0 : 1,
+                    successRate: backendInfo.type === 'cpu' ? 100 : 0,
+                    results: [{
+                        name: 'CPU Fallback Test',
+                        status: backendInfo.type === 'cpu' ? 'PASS' : 'FAIL',
+                        error: backendInfo.type !== 'cpu' ? 'Expected CPU backend but got ' + backendInfo.type : null
+                    }]
+                };
+                
+                displayTestResults(testResult);
+                
+                // Test performance
+                const input = new Float32Array([0.1, -0.05]);
+                const startTime = performance.now();
+                for (let i = 0; i < 100; i++) {
+                    backend.forward(input);
+                }
+                const endTime = performance.now();
+                
+                displayPerformanceInfo({
+                    backendType: 'CPU (Fallback)',
+                    averageForwardTime: (endTime - startTime) / 100,
+                    totalForwardPasses: 100,
+                    estimatedSpeedup: 1.0
+                });
+                
+                backend.destroy();
+                
+            } catch (error) {
+                console.error('CPU fallback test failed:', error);
+                showError('CPU fallback test failed: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function getPerformanceInfo() {
+            if (webgpuBackend) {
+                const perfMetrics = webgpuBackend.getPerformanceMetrics();
+                const backendInfo = webgpuBackend.getBackendInfo();
+                
+                displayPerformanceInfo({
+                    backendType: backendInfo.webgpuAvailable ? 'WebGPU' : 'CPU (Fallback)',
+                    ...perfMetrics
+                });
+            }
+        }
+
+        function displayTestResults(results) {
+            const summaryDiv = document.getElementById('test-summary');
+            const listDiv = document.getElementById('test-list');
+            
+            // Update summary
+            document.getElementById('total-tests').textContent = results.totalTests;
+            document.getElementById('passed-tests').textContent = results.passedTests;
+            document.getElementById('failed-tests').textContent = results.failedTests;
+            document.getElementById('success-rate').textContent = Math.round(results.successRate) + '%';
+            
+            // Show summary
+            summaryDiv.style.display = 'grid';
+            
+            // Clear and populate test list
+            listDiv.innerHTML = '';
+            
+            results.results.forEach(test => {
+                const testItem = document.createElement('div');
+                testItem.className = 'test-item';
+                
+                const statusClass = test.status.toLowerCase();
+                
+                testItem.innerHTML = `
+                    <div class="test-name">${test.name}</div>
+                    <div class="test-status ${statusClass}">${test.status}</div>
+                `;
+                
+                if (test.error) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-details';
+                    errorDiv.textContent = test.error;
+                    testItem.appendChild(errorDiv);
+                }
+                
+                listDiv.appendChild(testItem);
+            });
+            
+            listDiv.style.display = 'block';
+        }
+
+        function displayPerformanceInfo(perfMetrics) {
+            const perfDiv = document.getElementById('performance-info');
+            const gridDiv = document.getElementById('performance-grid');
+            
+            gridDiv.innerHTML = '';
+            
+            const metrics = [
+                { label: 'Backend Type', value: perfMetrics.backendType },
+                { label: 'Initialization Time', value: perfMetrics.initializationTime?.toFixed(2) + ' ms' || 'N/A' },
+                { label: 'Average Forward Time', value: perfMetrics.averageForwardTime?.toFixed(2) + ' ms' || 'N/A' },
+                { label: 'Total Forward Passes', value: perfMetrics.totalForwardPasses || 0 },
+                { label: 'Estimated Speedup', value: perfMetrics.estimatedSpeedup?.toFixed(1) + 'x' || '1.0x' }
+            ];
+            
+            metrics.forEach(metric => {
+                const item = document.createElement('div');
+                item.className = 'performance-item';
+                item.innerHTML = `
+                    <div class="label">${metric.label}</div>
+                    <div class="value">${metric.value}</div>
+                `;
+                gridDiv.appendChild(item);
+            });
+            
+            perfDiv.style.display = 'block';
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            
+            // Disable buttons during testing
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => {
+                button.disabled = show;
+            });
+        }
+
+        function clearResults() {
+            clearTestResults();
+            document.getElementById('performance-info').style.display = 'none';
+        }
+
+        function clearTestResults() {
+            document.getElementById('test-summary').style.display = 'none';
+            document.getElementById('test-list').style.display = 'none';
+            document.getElementById('test-list').innerHTML = '';
+        }
+
+        function showError(message) {
+            const listDiv = document.getElementById('test-list');
+            listDiv.innerHTML = `
+                <div class="test-item">
+                    <div class="test-name">Test Execution Error</div>
+                    <div class="test-status error">ERROR</div>
+                </div>
+                <div class="error-details">${message}</div>
+            `;
+            listDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
