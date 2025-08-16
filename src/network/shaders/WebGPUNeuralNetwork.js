@@ -7,7 +7,7 @@
  */
 
 import { ShaderManager } from './ShaderManager.js';
-import { BufferManager } from './BufferManager.js';
+import { BufferManager, BufferUsageType } from './BufferManager.js';
 import { validateArchitecture, calculateParameterCount } from '../NeuralNetwork.js';
 
 /**
@@ -54,17 +54,28 @@ export class WebGPUNeuralNetwork {
         this.hiddenSize = hiddenSize;
         this.outputSize = outputSize;
         
-        // Initialize shader and buffer managers
+        // Initialize shader and buffer managers with enhanced configuration
         this.shaderManager = new ShaderManager(this.device);
-        this.bufferManager = new BufferManager(this.device);
+        this.bufferManager = new BufferManager(this.device, {
+            maxBufferSize: 1024 * 1024 * 16, // 16MB max per buffer
+            maxTotalMemory: 1024 * 1024 * 256, // 256MB total limit
+            poolEnabled: true,
+            poolMaxAge: 60000, // 1 minute
+            poolMaxSize: 20,
+            enableValidation: true,
+            enableProfiling: true
+        });
         
         try {
             // Load and compile shaders
             await this.shaderManager.loadShaders();
             
-            // Create buffers for network
+            // Create buffers for network with enhanced features
             const architecture = { inputSize, hiddenSize, outputSize, batchSize: 1 };
-            this.buffers = this.bufferManager.createNetworkBuffers(architecture);
+            this.buffers = await this.bufferManager.createNetworkBuffers(architecture, {
+                persistent: true, // Keep weights persistent
+                allowReuse: true  // Allow buffer reuse from pool
+            });
             
             // Create bind groups
             const layouts = {
@@ -77,10 +88,12 @@ export class WebGPUNeuralNetwork {
             await this.initializeWeights(options.initMethod || 'xavier', options.seed);
             
             this.isInitialized = true;
-            this.gpuMemoryUsed = this.bufferManager.totalMemoryUsed;
+            const memoryUsage = this.bufferManager.getMemoryUsage();
+            this.gpuMemoryUsed = memoryUsage.memory.totalActive;
             
             console.log(`WebGPU neural network initialized: ${inputSize}-${hiddenSize}-${outputSize}`);
-            console.log(`GPU memory used: ${this.bufferManager.getMemoryUsage().totalMemoryFormatted}`);
+            console.log(`GPU memory used: ${memoryUsage.memory.totalActiveFormatted}`);
+            console.log(`Buffer pool efficiency: ${memoryUsage.pool.hitRate} hit rate`);
             
         } catch (error) {
             console.error('Failed to initialize WebGPU neural network:', error);
@@ -105,11 +118,35 @@ export class WebGPUNeuralNetwork {
         const weightsOutput = this._generateWeights(this.hiddenSize, this.outputSize, method, seed ? seed + 1 : null);
         const biasOutput = this._generateBias(this.outputSize);
 
-        // Upload weights to GPU
-        await this.bufferManager.uploadData('weightsHidden', weightsHidden);
-        await this.bufferManager.uploadData('biasHidden', biasHidden);
-        await this.bufferManager.uploadData('weightsOutput', weightsOutput);
-        await this.bufferManager.uploadData('biasOutput', biasOutput);
+        // Upload weights to GPU using enhanced buffer operations
+        await this.bufferManager.updateBuffer(
+            this.device.queue, 
+            this.buffers.weightsHidden, 
+            weightsHidden, 
+            0, 
+            { label: 'init_weights_hidden' }
+        );
+        await this.bufferManager.updateBuffer(
+            this.device.queue, 
+            this.buffers.biasHidden, 
+            biasHidden, 
+            0, 
+            { label: 'init_bias_hidden' }
+        );
+        await this.bufferManager.updateBuffer(
+            this.device.queue, 
+            this.buffers.weightsOutput, 
+            weightsOutput, 
+            0, 
+            { label: 'init_weights_output' }
+        );
+        await this.bufferManager.updateBuffer(
+            this.device.queue, 
+            this.buffers.biasOutput, 
+            biasOutput, 
+            0, 
+            { label: 'init_bias_output' }
+        );
 
         this.weightsInitialized = true;
         console.log('Weights initialized and uploaded to GPU');
@@ -197,14 +234,26 @@ export class WebGPUNeuralNetwork {
         const startTime = performance.now();
 
         try {
-            // Upload input data to GPU
-            await this.bufferManager.uploadData('input', input);
+            // Upload input data to GPU using enhanced buffer operations
+            await this.bufferManager.updateBuffer(
+                this.device.queue, 
+                this.buffers.input, 
+                input, 
+                0, 
+                { label: 'forward_input' }
+            );
 
             // Execute forward pass on GPU
             await this._executeForwardPass();
 
-            // Download output from GPU
-            const outputBuffer = await this.bufferManager.downloadData('output', this.outputSize * 4);
+            // Download output from GPU using enhanced buffer operations
+            const outputBuffer = await this.bufferManager.readBuffer(
+                this.device, 
+                this.buffers.output, 
+                this.outputSize * 4, 
+                0, 
+                { label: 'forward_output' }
+            );
             const output = new Float32Array(outputBuffer);
 
             // Track performance
@@ -238,31 +287,31 @@ export class WebGPUNeuralNetwork {
         });
 
         // Input to hidden layer (matrix multiplication + bias)
-        this.bufferManager.updateUniformBuffer('matmulParams', {
+        await this.bufferManager.updateUniformBuffer('matmulParams', {
             M: 1,
             K: this.inputSize,
             N: this.hiddenSize
-        });
+        }, { label: 'matmul_params_hidden' });
         
         passEncoder.setPipeline(this.shaderManager.getPipeline('matmul_simple'));
         passEncoder.setBindGroup(0, this.bindGroups.matmul);
         passEncoder.dispatchWorkgroups(Math.ceil(this.hiddenSize / 64));
 
         // ReLU activation on hidden layer
-        this.bufferManager.updateUniformBuffer('activationParams', {
+        await this.bufferManager.updateUniformBuffer('activationParams', {
             size: this.hiddenSize
-        });
+        }, { label: 'activation_params_hidden' });
         
         passEncoder.setPipeline(this.shaderManager.getPipeline('relu'));
         passEncoder.setBindGroup(0, this.bindGroups.activation);
         passEncoder.dispatchWorkgroups(Math.ceil(this.hiddenSize / 64));
 
         // Hidden to output layer (matrix multiplication + bias)
-        this.bufferManager.updateUniformBuffer('matmulParams', {
+        await this.bufferManager.updateUniformBuffer('matmulParams', {
             M: 1,
             K: this.hiddenSize,
             N: this.outputSize
-        });
+        }, { label: 'matmul_params_output' });
         
         passEncoder.setPipeline(this.shaderManager.getPipeline('matmul_simple'));
         passEncoder.setBindGroup(0, this.bindGroups.output);
@@ -290,7 +339,7 @@ export class WebGPUNeuralNetwork {
             throw new Error(`Batch input size mismatch. Expected ${batchSize * this.inputSize}, got ${batchInput.length}`);
         }
 
-        // For batch processing, we need to recreate buffers with batch dimension
+        // For batch processing, create buffers with batch dimension using enhanced features
         const batchArchitecture = { 
             inputSize: this.inputSize, 
             hiddenSize: this.hiddenSize, 
@@ -298,7 +347,11 @@ export class WebGPUNeuralNetwork {
             batchSize 
         };
         
-        const batchBuffers = this.bufferManager.createNetworkBuffers(batchArchitecture);
+        const batchBuffers = await this.bufferManager.createNetworkBuffers(batchArchitecture, {
+            persistent: false, // Temporary batch buffers
+            allowReuse: true   // Allow reuse for similar batch sizes
+        });
+        
         const layouts = {
             matmul: this.shaderManager.getBindGroupLayout('matmul'),
             activation: this.shaderManager.getBindGroupLayout('activation')
@@ -309,14 +362,26 @@ export class WebGPUNeuralNetwork {
             // Copy current weights to batch buffers
             await this._copyWeightsToBatchBuffers(batchBuffers);
 
-            // Upload batch input
-            await this.bufferManager.uploadData('input', batchInput);
+            // Upload batch input using enhanced buffer operations
+            await this.bufferManager.updateBuffer(
+                this.device.queue, 
+                this.bufferManager.getBuffer('input'), 
+                batchInput, 
+                0, 
+                { label: 'batch_input', useStaging: batchInput.length > 64 * 1024 }
+            );
 
             // Execute batch forward pass
             await this._executeBatchForwardPass(batchSize, batchBindGroups);
 
-            // Download batch output
-            const outputBuffer = await this.bufferManager.downloadData('output', batchSize * this.outputSize * 4);
+            // Download batch output using enhanced buffer operations
+            const outputBuffer = await this.bufferManager.readBuffer(
+                this.device, 
+                this.bufferManager.getBuffer('output'), 
+                batchSize * this.outputSize * 4, 
+                0, 
+                { label: 'batch_output' }
+            );
             return new Float32Array(outputBuffer);
 
         } finally {
@@ -349,11 +414,11 @@ export class WebGPUNeuralNetwork {
         });
 
         // Input to hidden layer
-        this.bufferManager.updateUniformBuffer('matmulParams', {
+        await this.bufferManager.updateUniformBuffer('matmulParams', {
             M: batchSize,
             K: this.inputSize,
             N: this.hiddenSize
-        });
+        }, { label: 'batch_matmul_params_hidden' });
         
         if (this.shaderManager.computePipelines.has('matmul_batch')) {
             passEncoder.setPipeline(this.shaderManager.getPipeline('matmul_batch'));
@@ -371,20 +436,20 @@ export class WebGPUNeuralNetwork {
         }
 
         // Batch ReLU activation
-        this.bufferManager.updateUniformBuffer('activationParams', {
+        await this.bufferManager.updateUniformBuffer('activationParams', {
             size: batchSize * this.hiddenSize
-        });
+        }, { label: 'batch_activation_params' });
         
         passEncoder.setPipeline(this.shaderManager.getPipeline('relu'));
         passEncoder.setBindGroup(0, bindGroups.activation);
         passEncoder.dispatchWorkgroups(Math.ceil(batchSize * this.hiddenSize / 64));
 
         // Hidden to output layer
-        this.bufferManager.updateUniformBuffer('matmulParams', {
+        await this.bufferManager.updateUniformBuffer('matmulParams', {
             M: batchSize,
             K: this.hiddenSize,
             N: this.outputSize
-        });
+        }, { label: 'batch_matmul_params_output' });
         
         passEncoder.setPipeline(this.shaderManager.getPipeline('matmul_simple'));
         passEncoder.setBindGroup(0, bindGroups.output);
@@ -404,11 +469,23 @@ export class WebGPUNeuralNetwork {
             throw new Error('Neural network not initialized');
         }
 
-        // Download weights from GPU
-        const weightsHiddenBuffer = await this.bufferManager.downloadData('weightsHidden', this.inputSize * this.hiddenSize * 4);
-        const biasHiddenBuffer = await this.bufferManager.downloadData('biasHidden', this.hiddenSize * 4);
-        const weightsOutputBuffer = await this.bufferManager.downloadData('weightsOutput', this.hiddenSize * this.outputSize * 4);
-        const biasOutputBuffer = await this.bufferManager.downloadData('biasOutput', this.outputSize * 4);
+        // Download weights from GPU using enhanced buffer operations
+        const weightsHiddenBuffer = await this.bufferManager.readBuffer(
+            this.device, this.buffers.weightsHidden, this.inputSize * this.hiddenSize * 4, 0, 
+            { label: 'get_weights_hidden' }
+        );
+        const biasHiddenBuffer = await this.bufferManager.readBuffer(
+            this.device, this.buffers.biasHidden, this.hiddenSize * 4, 0, 
+            { label: 'get_bias_hidden' }
+        );
+        const weightsOutputBuffer = await this.bufferManager.readBuffer(
+            this.device, this.buffers.weightsOutput, this.hiddenSize * this.outputSize * 4, 0, 
+            { label: 'get_weights_output' }
+        );
+        const biasOutputBuffer = await this.bufferManager.readBuffer(
+            this.device, this.buffers.biasOutput, this.outputSize * 4, 0, 
+            { label: 'get_bias_output' }
+        );
 
         return {
             weightsHidden: new Float32Array(weightsHiddenBuffer),
@@ -427,11 +504,23 @@ export class WebGPUNeuralNetwork {
             throw new Error('Neural network not initialized');
         }
 
-        // Upload new weights to GPU
-        await this.bufferManager.uploadData('weightsHidden', weights.weightsHidden);
-        await this.bufferManager.uploadData('biasHidden', weights.biasHidden);
-        await this.bufferManager.uploadData('weightsOutput', weights.weightsOutput);
-        await this.bufferManager.uploadData('biasOutput', weights.biasOutput);
+        // Upload new weights to GPU using enhanced buffer operations
+        await this.bufferManager.updateBuffer(
+            this.device.queue, this.buffers.weightsHidden, weights.weightsHidden, 0, 
+            { label: 'set_weights_hidden' }
+        );
+        await this.bufferManager.updateBuffer(
+            this.device.queue, this.buffers.biasHidden, weights.biasHidden, 0, 
+            { label: 'set_bias_hidden' }
+        );
+        await this.bufferManager.updateBuffer(
+            this.device.queue, this.buffers.weightsOutput, weights.weightsOutput, 0, 
+            { label: 'set_weights_output' }
+        );
+        await this.bufferManager.updateBuffer(
+            this.device.queue, this.buffers.biasOutput, weights.biasOutput, 0, 
+            { label: 'set_bias_output' }
+        );
 
         this.weightsInitialized = true;
         console.log('Weights updated on GPU');
@@ -454,7 +543,7 @@ export class WebGPUNeuralNetwork {
     }
 
     /**
-     * Get performance metrics
+     * Get comprehensive performance metrics including enhanced buffer management
      * @returns {Object} Performance statistics
      */
     getPerformanceMetrics() {
@@ -463,25 +552,60 @@ export class WebGPUNeuralNetwork {
             ? forwardTimes.reduce((a, b) => a + b) / forwardTimes.length 
             : 0;
 
+        const bufferMetrics = this.bufferManager ? this.bufferManager.getMemoryUsage() : null;
+        const bufferPerformance = this.bufferManager ? this.bufferManager.getPerformanceMetrics() : null;
+
         return {
+            // Neural network metrics
             averageForwardTime: avgForwardTime,
             totalForwardPasses: forwardTimes.length,
             gpuMemoryUsed: this.gpuMemoryUsed,
-            bufferManagerMetrics: this.bufferManager ? this.bufferManager.getMemoryUsage() : null,
-            shaderManagerMetrics: this.shaderManager ? this.shaderManager.getPerformanceMetrics() : null
+            
+            // Enhanced buffer management metrics
+            bufferManager: bufferMetrics ? {
+                memory: bufferMetrics.memory,
+                buffers: bufferMetrics.buffers,
+                pool: bufferMetrics.pool,
+                performance: bufferMetrics.performance,
+                config: bufferMetrics.config
+            } : null,
+            
+            // Detailed buffer performance
+            bufferPerformance: bufferPerformance ? {
+                bufferCreation: bufferPerformance.bufferCreation,
+                memoryTransfer: bufferPerformance.memoryTransfer,
+                mapping: bufferPerformance.mapping,
+                asyncOperations: bufferPerformance.asyncOperations,
+                errors: bufferPerformance.errors
+            } : null,
+            
+            // Shader manager metrics
+            shaderManager: this.shaderManager ? this.shaderManager.getPerformanceMetrics() : null,
+            
+            // Overall system efficiency
+            efficiency: {
+                bufferPoolHitRate: bufferMetrics ? bufferMetrics.pool.hitRate : '0%',
+                memoryUtilization: bufferMetrics ? bufferMetrics.memory.utilizationPercent + '%' : '0%',
+                averageBufferCreationTime: bufferMetrics ? bufferMetrics.performance.avgCreationTime : '0ms',
+                averageTransferTime: bufferMetrics ? bufferMetrics.performance.avgTransferTime : '0ms'
+            }
         };
     }
 
     /**
-     * Validate that the network is ready for inference
-     * @returns {Object} Validation results
+     * Validate that the network is ready for inference with enhanced buffer validation
+     * @returns {Object} Comprehensive validation results
      */
     validate() {
         const validation = {
             isValid: true,
-            issues: []
+            issues: [],
+            warnings: [],
+            bufferStatus: {},
+            performance: {}
         };
 
+        // Basic validation
         if (!this.isInitialized) {
             validation.isValid = false;
             validation.issues.push('Network not initialized');
@@ -502,12 +626,64 @@ export class WebGPUNeuralNetwork {
             validation.issues.push('GPU managers not initialized');
         }
 
+        // Enhanced buffer validation
+        if (this.bufferManager) {
+            const bufferMetrics = this.bufferManager.getMemoryUsage();
+            const bufferPerformance = this.bufferManager.getPerformanceMetrics();
+            
+            validation.bufferStatus = {
+                totalBuffers: bufferMetrics.buffers.count,
+                memoryUsage: bufferMetrics.memory.totalActiveFormatted,
+                memoryUtilization: bufferMetrics.memory.utilizationPercent + '%',
+                poolEfficiency: bufferMetrics.pool.hitRate,
+                errorCount: bufferPerformance.errors.count
+            };
+            
+            // Check for buffer-related issues
+            if (bufferPerformance.errors.count > 0) {
+                validation.warnings.push(`${bufferPerformance.errors.count} buffer errors detected`);
+            }
+            
+            if (parseFloat(bufferMetrics.memory.utilizationPercent) > 90) {
+                validation.warnings.push('High memory utilization (>90%)');
+            }
+            
+            if (parseFloat(bufferMetrics.pool.hitRate) < 50 && bufferMetrics.pool.hits + bufferMetrics.pool.misses > 10) {
+                validation.warnings.push('Low buffer pool efficiency (<50% hit rate)');
+            }
+            
+            // Performance validation
+            const avgCreationTime = parseFloat(bufferMetrics.performance.avgCreationTime);
+            const avgTransferTime = parseFloat(bufferMetrics.performance.avgTransferTime);
+            
+            validation.performance = {
+                avgBufferCreation: bufferMetrics.performance.avgCreationTime,
+                avgMemoryTransfer: bufferMetrics.performance.avgTransferTime,
+                isPerformant: avgCreationTime < 5.0 && avgTransferTime < 10.0 // ms thresholds
+            };
+            
+            if (!validation.performance.isPerformant) {
+                validation.warnings.push('Suboptimal buffer performance detected');
+            }
+        }
+
         // Validate shader compilation
         if (this.shaderManager) {
             const shaderValidation = this.shaderManager.validateShaders();
             if (!shaderValidation.allShadersCompiled) {
                 validation.isValid = false;
                 validation.issues.push(`Missing shaders: ${shaderValidation.missingShaders.join(', ')}`);
+            }
+        }
+
+        // Validate required buffers exist
+        if (this.buffers) {
+            const requiredBuffers = ['input', 'hidden', 'output', 'weightsHidden', 'weightsOutput', 'biasHidden', 'biasOutput'];
+            for (const bufferName of requiredBuffers) {
+                if (!this.buffers[bufferName]) {
+                    validation.isValid = false;
+                    validation.issues.push(`Missing required buffer: ${bufferName}`);
+                }
             }
         }
 
@@ -534,6 +710,17 @@ export class WebGPUNeuralNetwork {
         this.weightsInitialized = false;
         this.forwardPassTimes = [];
 
-        console.log('WebGPU neural network destroyed');
+        // Log final performance metrics before destruction
+        if (this.bufferManager) {
+            const finalMetrics = this.bufferManager.getMemoryUsage();
+            console.log('Final buffer pool stats:', {
+                hits: finalMetrics.pool.hits,
+                misses: finalMetrics.pool.misses,
+                hitRate: finalMetrics.pool.hitRate,
+                totalReused: finalMetrics.pool.totalReused
+            });
+        }
+        
+        console.log('Enhanced WebGPU neural network destroyed');
     }
 }
