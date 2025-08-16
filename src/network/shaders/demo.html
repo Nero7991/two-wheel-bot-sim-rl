@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Neural Network Shaders Demo - Phase 2.2</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2em;
+            color: #666;
+        }
+
+        .demo-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #667eea;
+        }
+
+        .demo-controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .status.info {
+            background: #cce7ff;
+            color: #0066cc;
+            border: 1px solid #99d6ff;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #a3d9a5;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f1aeb5;
+        }
+
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .results-panel {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+
+        .results-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        .results-content {
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .architecture-info {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .architecture-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .architecture-item {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+        }
+
+        .forward-pass-demo {
+            background: #f0f8ff;
+            border: 1px solid #b3d9ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .input-output-pair {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-family: 'Courier New', monospace;
+        }
+
+        .input-values {
+            color: #0066cc;
+            font-weight: bold;
+        }
+
+        .output-values {
+            color: #cc6600;
+            font-weight: bold;
+        }
+
+        .performance-chart {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .log-output {
+            background: #1e1e1e;
+            color: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 15px 0;
+            border: 1px solid #333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+        }
+
+        .feature-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .feature-list li:before {
+            content: "✅ ";
+            margin-right: 10px;
+        }
+
+        .warning-banner {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .warning-banner strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .container {
+                padding: 20px;
+            }
+            
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .demo-controls {
+                flex-direction: column;
+            }
+            
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 WebGPU Neural Network Shaders</h1>
+            <p>Phase 2.2: WGSL Compute Shaders for Two-Wheel Robot RL</p>
+        </div>
+
+        <div class="warning-banner">
+            <strong>⚠️ WebGPU Required</strong>
+            This demo requires WebGPU support. Please use Chrome/Edge 113+ or Firefox with WebGPU enabled.
+        </div>
+
+        <div class="demo-section">
+            <h2>🚀 Interactive Demo</h2>
+            <div class="demo-controls">
+                <button id="run-basic-demo">Run Basic Demo</button>
+                <button id="run-tests">Run Shader Tests</button>
+                <button id="run-benchmarks">Run Benchmarks</button>
+                <button id="clear-results">Clear Results</button>
+            </div>
+
+            <div id="status" class="status info">
+                Ready to demonstrate WebGPU neural network shaders. Click "Run Basic Demo" to begin.
+            </div>
+
+            <div class="progress-bar" style="display: none;">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
+        </div>
+
+        <div id="webgpu-info" class="architecture-info" style="display: none;">
+            <h3>🔧 WebGPU Device Information</h3>
+            <div id="device-details"></div>
+        </div>
+
+        <div id="network-architecture" class="architecture-info" style="display: none;">
+            <h3>🏗️ Neural Network Architecture</h3>
+            <div class="architecture-grid">
+                <div class="architecture-item">
+                    <div class="metric-value" id="input-size">-</div>
+                    <div class="metric-label">Input Size</div>
+                </div>
+                <div class="architecture-item">
+                    <div class="metric-value" id="hidden-size">-</div>
+                    <div class="metric-label">Hidden Size</div>
+                </div>
+                <div class="architecture-item">
+                    <div class="metric-value" id="output-size">-</div>
+                    <div class="metric-label">Output Size</div>
+                </div>
+                <div class="architecture-item">
+                    <div class="metric-value" id="parameter-count">-</div>
+                    <div class="metric-label">Parameters</div>
+                </div>
+                <div class="architecture-item">
+                    <div class="metric-value" id="backend-type">-</div>
+                    <div class="metric-label">Backend</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="forward-pass-demo" class="forward-pass-demo" style="display: none;">
+            <h3>🎯 Forward Pass Results</h3>
+            <div id="forward-pass-results"></div>
+        </div>
+
+        <div id="performance-metrics" class="results-panel" style="display: none;">
+            <div class="results-header">⚡ Performance Metrics</div>
+            <div class="results-content">
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="avg-forward-time">-</div>
+                        <div class="metric-label">Avg Forward Time (ms)</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="min-forward-time">-</div>
+                        <div class="metric-label">Min Forward Time (ms)</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="max-forward-time">-</div>
+                        <div class="metric-label">Max Forward Time (ms)</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="gpu-speedup">-</div>
+                        <div class="metric-label">Estimated Speedup</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="memory-usage">-</div>
+                        <div class="metric-label">GPU Memory</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="total-passes">-</div>
+                        <div class="metric-label">Total Passes</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="test-results" class="results-panel" style="display: none;">
+            <div class="results-header">🧪 Shader Test Results</div>
+            <div class="results-content">
+                <div id="test-summary" class="metric-grid"></div>
+                <div id="test-details"></div>
+            </div>
+        </div>
+
+        <div id="benchmark-results" class="results-panel" style="display: none;">
+            <div class="results-header">📊 Benchmark Results</div>
+            <div class="results-content">
+                <div id="benchmark-summary"></div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🛠️ Implementation Features</h2>
+            <ul class="feature-list">
+                <li>WGSL compute shaders for matrix multiplication with bias</li>
+                <li>ReLU activation function optimized for GPU</li>
+                <li>Q-learning weight update kernels</li>
+                <li>Efficient buffer management system</li>
+                <li>Automatic CPU fallback when WebGPU unavailable</li>
+                <li>Comprehensive test suite with numerical validation</li>
+                <li>Performance benchmarking and comparison</li>
+                <li>Support for variable network architectures (2→4-16→3)</li>
+                <li>Batch processing for training efficiency</li>
+                <li>Memory optimization and workgroup sizing</li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>📋 Console Output</h2>
+            <div id="console-output" class="log-output">
+                Console output will appear here when demo is running...
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { runWebGPUShadersExample, demonstrateWebGPUShaders, runShaderTests, runBenchmarks } from './example.js';
+
+        class ShadersDemo {
+            constructor() {
+                this.isRunning = false;
+                this.originalConsoleLog = console.log;
+                this.originalConsoleError = console.error;
+                this.consoleOutput = [];
+                
+                this.setupConsoleCapture();
+                this.setupEventListeners();
+                this.checkWebGPUAvailability();
+            }
+
+            setupConsoleCapture() {
+                const consoleDiv = document.getElementById('console-output');
+                
+                console.log = (...args) => {
+                    this.originalConsoleLog.apply(console, args);
+                    const message = args.join(' ');
+                    this.consoleOutput.push(`[LOG] ${message}`);
+                    this.updateConsoleDisplay();
+                };
+
+                console.error = (...args) => {
+                    this.originalConsoleError.apply(console, args);
+                    const message = args.join(' ');
+                    this.consoleOutput.push(`[ERROR] ${message}`);
+                    this.updateConsoleDisplay();
+                };
+            }
+
+            updateConsoleDisplay() {
+                const consoleDiv = document.getElementById('console-output');
+                const recentLogs = this.consoleOutput.slice(-50); // Keep last 50 messages
+                consoleDiv.textContent = recentLogs.join('\n');
+                consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            }
+
+            setupEventListeners() {
+                document.getElementById('run-basic-demo').addEventListener('click', () => this.runBasicDemo());
+                document.getElementById('run-tests').addEventListener('click', () => this.runTests());
+                document.getElementById('run-benchmarks').addEventListener('click', () => this.runBenchmarks());
+                document.getElementById('clear-results').addEventListener('click', () => this.clearResults());
+            }
+
+            async checkWebGPUAvailability() {
+                const statusDiv = document.getElementById('status');
+                const deviceInfoDiv = document.getElementById('webgpu-info');
+                const deviceDetailsDiv = document.getElementById('device-details');
+
+                try {
+                    if (!navigator.gpu) {
+                        throw new Error('WebGPU not supported in this browser');
+                    }
+
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (!adapter) {
+                        throw new Error('No WebGPU adapter available');
+                    }
+
+                    const device = await adapter.requestDevice();
+                    
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = '✅ WebGPU is available and ready for shader demos!';
+                    
+                    // Show device information
+                    deviceInfoDiv.style.display = 'block';
+                    deviceDetailsDiv.innerHTML = `
+                        <p><strong>Vendor:</strong> ${adapter.info?.vendor || 'Unknown'}</p>
+                        <p><strong>Device:</strong> ${adapter.info?.device || 'Unknown'}</p>
+                        <p><strong>Features:</strong> ${Array.from(adapter.features).join(', ') || 'None'}</p>
+                        <p><strong>Max Buffer Size:</strong> ${this.formatBytes(adapter.limits.maxBufferSize)}</p>
+                        <p><strong>Max Workgroup Size:</strong> ${adapter.limits.maxComputeWorkgroupSizeX}</p>
+                    `;
+
+                    device.destroy();
+
+                } catch (error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = `❌ WebGPU Error: ${error.message}`;
+                    
+                    // Disable demo buttons but keep tests available (may have fallback)
+                    document.getElementById('run-basic-demo').disabled = true;
+                    document.getElementById('run-benchmarks').disabled = true;
+                }
+            }
+
+            async runBasicDemo() {
+                if (this.isRunning) return;
+                
+                this.setRunning(true);
+                this.updateStatus('Running basic WebGPU neural network demo...', 'info');
+                
+                try {
+                    const results = await demonstrateWebGPUShaders();
+                    
+                    if (results.success) {
+                        this.displayDemoResults(results);
+                        this.updateStatus('✅ Basic demo completed successfully!', 'success');
+                    } else {
+                        this.updateStatus(`❌ Demo failed: ${results.error}`, 'error');
+                    }
+                    
+                } catch (error) {
+                    this.updateStatus(`❌ Demo error: ${error.message}`, 'error');
+                } finally {
+                    this.setRunning(false);
+                }
+            }
+
+            async runTests() {
+                if (this.isRunning) return;
+                
+                this.setRunning(true);
+                this.updateStatus('Running comprehensive shader tests...', 'info');
+                
+                try {
+                    const results = await runShaderTests();
+                    this.displayTestResults(results);
+                    
+                    if (results.success !== false) {
+                        this.updateStatus(`✅ Tests completed: ${results.passed}/${results.total} passed`, 'success');
+                    } else {
+                        this.updateStatus(`❌ Tests failed: ${results.error}`, 'error');
+                    }
+                    
+                } catch (error) {
+                    this.updateStatus(`❌ Test error: ${error.message}`, 'error');
+                } finally {
+                    this.setRunning(false);
+                }
+            }
+
+            async runBenchmarks() {
+                if (this.isRunning) return;
+                
+                this.setRunning(true);
+                this.updateStatus('Running performance benchmarks...', 'info');
+                
+                try {
+                    const results = await runBenchmarks();
+                    this.displayBenchmarkResults(results);
+                    
+                    if (results.success !== false) {
+                        this.updateStatus('✅ Benchmarks completed successfully!', 'success');
+                    } else {
+                        this.updateStatus(`❌ Benchmarks failed: ${results.error}`, 'error');
+                    }
+                    
+                } catch (error) {
+                    this.updateStatus(`❌ Benchmark error: ${error.message}`, 'error');
+                } finally {
+                    this.setRunning(false);
+                }
+            }
+
+            displayDemoResults(results) {
+                // Display architecture
+                if (results.architecture) {
+                    const arch = results.architecture;
+                    document.getElementById('network-architecture').style.display = 'block';
+                    document.getElementById('input-size').textContent = arch.inputSize;
+                    document.getElementById('hidden-size').textContent = arch.hiddenSize;
+                    document.getElementById('output-size').textContent = arch.outputSize;
+                    document.getElementById('parameter-count').textContent = arch.parameterCount;
+                    document.getElementById('backend-type').textContent = arch.backend;
+                }
+
+                // Display performance metrics
+                if (results.performance) {
+                    const perf = results.performance;
+                    document.getElementById('performance-metrics').style.display = 'block';
+                    document.getElementById('avg-forward-time').textContent = perf.averageTime.toFixed(3);
+                    document.getElementById('min-forward-time').textContent = perf.minTime.toFixed(3);
+                    document.getElementById('max-forward-time').textContent = perf.maxTime.toFixed(3);
+                    document.getElementById('gpu-speedup').textContent = perf.estimatedSpeedup.toFixed(1) + 'x';
+                    document.getElementById('total-passes').textContent = perf.iterations;
+                }
+
+                // Display memory usage
+                if (results.memoryUsage) {
+                    document.getElementById('memory-usage').textContent = results.memoryUsage.totalMemoryFormatted;
+                }
+            }
+
+            displayTestResults(results) {
+                if (!results || results.success === false) return;
+
+                document.getElementById('test-results').style.display = 'block';
+                
+                // Test summary
+                const summaryDiv = document.getElementById('test-summary');
+                summaryDiv.innerHTML = `
+                    <div class="metric-card">
+                        <div class="metric-value">${results.total}</div>
+                        <div class="metric-label">Total Tests</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${results.passed}</div>
+                        <div class="metric-label">Passed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${results.failed}</div>
+                        <div class="metric-label">Failed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">${results.passRate}</div>
+                        <div class="metric-label">Pass Rate</div>
+                    </div>
+                `;
+
+                // Test details
+                const detailsDiv = document.getElementById('test-details');
+                if (results.results) {
+                    const testList = results.results.map(test => {
+                        const status = test.passed ? '✅' : '❌';
+                        const duration = test.duration ? ` (${test.duration.toFixed(2)}ms)` : '';
+                        return `<div style="padding: 5px 0; border-bottom: 1px solid #eee;">
+                            ${status} ${test.name}${duration}
+                            ${test.error ? `<div style="color: red; font-size: 0.9em; margin-left: 20px;">Error: ${test.error}</div>` : ''}
+                        </div>`;
+                    }).join('');
+                    
+                    detailsDiv.innerHTML = testList;
+                }
+            }
+
+            displayBenchmarkResults(results) {
+                if (!results || results.success === false) return;
+
+                document.getElementById('benchmark-results').style.display = 'block';
+                
+                const summaryDiv = document.getElementById('benchmark-summary');
+                let summaryHtml = `<p><strong>Total benchmark time:</strong> ${results.overview?.totalBenchmarkTime?.toFixed(2) || 'N/A'}ms</p>`;
+                
+                // Matrix multiplication results
+                if (results.matmulBenchmarks) {
+                    summaryHtml += '<h4>Matrix Multiplication Performance:</h4>';
+                    Object.entries(results.matmulBenchmarks).forEach(([config, data]) => {
+                        summaryHtml += `<p><strong>${config}:</strong></p><ul>`;
+                        Object.entries(data).forEach(([batch, stats]) => {
+                            summaryHtml += `<li>${batch}: ${stats.mean?.toFixed(3) || 'N/A'}ms avg</li>`;
+                        });
+                        summaryHtml += '</ul>';
+                    });
+                }
+
+                // GPU vs CPU comparison
+                if (results.comparisonResults) {
+                    summaryHtml += '<h4>GPU vs CPU Comparison:</h4><ul>';
+                    Object.entries(results.comparisonResults).forEach(([config, comparison]) => {
+                        summaryHtml += `<li>${config}: ${comparison.speedup?.toFixed(2) || 'N/A'}x speedup (${comparison.recommendation})</li>`;
+                    });
+                    summaryHtml += '</ul>';
+                }
+
+                summaryDiv.innerHTML = summaryHtml;
+            }
+
+            setRunning(running) {
+                this.isRunning = running;
+                const buttons = document.querySelectorAll('button');
+                buttons.forEach(btn => {
+                    if (btn.id !== 'clear-results') {
+                        btn.disabled = running;
+                    }
+                });
+
+                const progressBar = document.querySelector('.progress-bar');
+                if (running) {
+                    progressBar.style.display = 'block';
+                    this.animateProgress();
+                } else {
+                    progressBar.style.display = 'none';
+                }
+            }
+
+            animateProgress() {
+                const progressFill = document.getElementById('progress-fill');
+                let width = 0;
+                const interval = setInterval(() => {
+                    if (!this.isRunning) {
+                        clearInterval(interval);
+                        return;
+                    }
+                    width += Math.random() * 10;
+                    if (width >= 90) width = 90;
+                    progressFill.style.width = width + '%';
+                }, 200);
+            }
+
+            updateStatus(message, type) {
+                const statusDiv = document.getElementById('status');
+                statusDiv.textContent = message;
+                statusDiv.className = `status ${type}`;
+            }
+
+            clearResults() {
+                this.consoleOutput = [];
+                this.updateConsoleDisplay();
+                
+                document.getElementById('network-architecture').style.display = 'none';
+                document.getElementById('forward-pass-demo').style.display = 'none';
+                document.getElementById('performance-metrics').style.display = 'none';
+                document.getElementById('test-results').style.display = 'none';
+                document.getElementById('benchmark-results').style.display = 'none';
+                
+                this.updateStatus('Results cleared. Ready for new demo.', 'info');
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        }
+
+        // Initialize demo when page loads
+        window.addEventListener('load', () => {
+            new ShadersDemo();
+        });
+    </script>
+</body>
+</html>

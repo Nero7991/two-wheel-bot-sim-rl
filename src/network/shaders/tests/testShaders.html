@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Shader Tests - Two-Wheel Robot RL</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+
+        .test-section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .test-controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .test-results {
+            margin-top: 25px;
+        }
+
+        .test-item {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 5px solid;
+            transition: all 0.3s ease;
+        }
+
+        .test-item:hover {
+            transform: translateX(5px);
+        }
+
+        .test-passed {
+            background-color: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+
+        .test-failed {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+
+        .test-skipped {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+
+        .test-details {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: rgba(0,0,0,0.05);
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .test-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .summary-item {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .summary-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .status.info {
+            background-color: #cce7ff;
+            color: #0066cc;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .performance-metrics {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+
+        .metric-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .metric-value {
+            font-family: 'Courier New', monospace;
+            color: #666;
+        }
+
+        .toggle-details {
+            background: none;
+            border: 1px solid #ddd;
+            color: #666;
+            padding: 5px 10px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .toggle-details:hover {
+            background: #f0f0f0;
+        }
+
+        .webgpu-info {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 WebGPU Shader Tests</h1>
+        <p>Neural Network Compute Shaders for Two-Wheel Balancing Robot RL</p>
+    </div>
+
+    <div id="webgpu-info" class="webgpu-info" style="display: none;">
+        <h3>WebGPU Device Information</h3>
+        <div id="device-details"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Controls</h2>
+        <div class="test-controls">
+            <button id="run-all-tests">Run All Tests</button>
+            <button id="run-matmul-tests">Matrix Multiplication</button>
+            <button id="run-activation-tests">Activation Functions</button>
+            <button id="run-qlearning-tests">Q-Learning</button>
+            <button id="run-performance-tests">Performance</button>
+            <button id="clear-results">Clear Results</button>
+        </div>
+
+        <div id="status" class="status info">
+            Ready to run tests. Make sure WebGPU is available in your browser.
+        </div>
+    </div>
+
+    <div id="test-summary" class="test-summary" style="display: none;">
+        <h2>Test Summary</h2>
+        <div class="summary-grid">
+            <div class="summary-item">
+                <div class="summary-value" id="total-tests">0</div>
+                <div>Total Tests</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value" id="passed-tests">0</div>
+                <div>Passed</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value" id="failed-tests">0</div>
+                <div>Failed</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value" id="pass-rate">0%</div>
+                <div>Pass Rate</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value" id="total-time">0ms</div>
+                <div>Total Time</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="performance-metrics" class="performance-metrics" style="display: none;">
+        <h2>Performance Metrics</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-title">Shader Compilation</div>
+                <div class="metric-value" id="compilation-metrics"></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Memory Usage</div>
+                <div class="metric-value" id="memory-metrics"></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Pipeline Creation</div>
+                <div class="metric-value" id="pipeline-metrics"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div id="test-results">
+            <div class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Running tests...</p>
+            </div>
+            <p>Click "Run All Tests" to begin testing WebGPU shader functionality.</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { ShaderTests } from './ShaderTests.js';
+
+        class TestRunner {
+            constructor() {
+                this.shaderTests = null;
+                this.isRunning = false;
+                this.setupEventListeners();
+                this.checkWebGPUAvailability();
+            }
+
+            setupEventListeners() {
+                document.getElementById('run-all-tests').addEventListener('click', () => this.runAllTests());
+                document.getElementById('run-matmul-tests').addEventListener('click', () => this.runSpecificTests('matmul'));
+                document.getElementById('run-activation-tests').addEventListener('click', () => this.runSpecificTests('activation'));
+                document.getElementById('run-qlearning-tests').addEventListener('click', () => this.runSpecificTests('qlearning'));
+                document.getElementById('run-performance-tests').addEventListener('click', () => this.runSpecificTests('performance'));
+                document.getElementById('clear-results').addEventListener('click', () => this.clearResults());
+            }
+
+            async checkWebGPUAvailability() {
+                const statusDiv = document.getElementById('status');
+                const deviceInfoDiv = document.getElementById('webgpu-info');
+                const deviceDetailsDiv = document.getElementById('device-details');
+
+                try {
+                    if (!navigator.gpu) {
+                        throw new Error('WebGPU not supported in this browser');
+                    }
+
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (!adapter) {
+                        throw new Error('No WebGPU adapter available');
+                    }
+
+                    const device = await adapter.requestDevice();
+                    
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = 'WebGPU is available and ready for testing!';
+                    
+                    // Show device information
+                    deviceInfoDiv.style.display = 'block';
+                    deviceDetailsDiv.innerHTML = `
+                        <p><strong>Adapter:</strong> ${adapter.info?.vendor || 'Unknown'} ${adapter.info?.device || 'Unknown'}</p>
+                        <p><strong>Features:</strong> ${Array.from(adapter.features).join(', ') || 'None'}</p>
+                        <p><strong>Max Buffer Size:</strong> ${this.formatBytes(adapter.limits.maxBufferSize)}</p>
+                        <p><strong>Max Workgroup Size:</strong> ${adapter.limits.maxComputeWorkgroupSizeX}</p>
+                    `;
+
+                    device.destroy();
+
+                } catch (error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = `WebGPU Error: ${error.message}`;
+                    
+                    // Disable test buttons
+                    document.querySelectorAll('button').forEach(btn => {
+                        if (btn.id !== 'clear-results') {
+                            btn.disabled = true;
+                        }
+                    });
+                }
+            }
+
+            async runAllTests() {
+                if (this.isRunning) return;
+                
+                this.isRunning = true;
+                this.showLoading(true);
+                this.setButtonsDisabled(true);
+
+                try {
+                    this.shaderTests = new ShaderTests();
+                    await this.shaderTests.initialize();
+                    
+                    const results = await this.shaderTests.runAllTests();
+                    this.displayResults(results);
+                    
+                } catch (error) {
+                    this.displayError(error);
+                } finally {
+                    this.showLoading(false);
+                    this.setButtonsDisabled(false);
+                    this.isRunning = false;
+                }
+            }
+
+            async runSpecificTests(testType) {
+                if (this.isRunning) return;
+                
+                this.isRunning = true;
+                this.showLoading(true);
+                this.setButtonsDisabled(true);
+
+                try {
+                    if (!this.shaderTests) {
+                        this.shaderTests = new ShaderTests();
+                        await this.shaderTests.initialize();
+                    }
+
+                    let results;
+                    switch (testType) {
+                        case 'matmul':
+                            await this.shaderTests.testMatrixMultiplication();
+                            await this.shaderTests.testMatrixMultiplicationBatch();
+                            await this.shaderTests.testMatrixMultiplicationEdgeCases();
+                            break;
+                        case 'activation':
+                            await this.shaderTests.testReLUActivation();
+                            await this.shaderTests.testReLUDerivative();
+                            await this.shaderTests.testActivationEdgeCases();
+                            break;
+                        case 'qlearning':
+                            await this.shaderTests.testTDErrorComputation();
+                            await this.shaderTests.testWeightUpdates();
+                            await this.shaderTests.testQLearningIntegration();
+                            break;
+                        case 'performance':
+                            await this.shaderTests.testPerformanceBenchmarks();
+                            break;
+                    }
+
+                    results = this.shaderTests.generateTestSummary(0);
+                    this.displayResults(results);
+                    
+                } catch (error) {
+                    this.displayError(error);
+                } finally {
+                    this.showLoading(false);
+                    this.setButtonsDisabled(false);
+                    this.isRunning = false;
+                }
+            }
+
+            displayResults(results) {
+                this.displaySummary(results);
+                this.displayTestDetails(results);
+                this.displayPerformanceMetrics(results);
+            }
+
+            displaySummary(results) {
+                const summaryDiv = document.getElementById('test-summary');
+                summaryDiv.style.display = 'block';
+
+                document.getElementById('total-tests').textContent = results.total;
+                document.getElementById('passed-tests').textContent = results.passed;
+                document.getElementById('failed-tests').textContent = results.failed;
+                document.getElementById('pass-rate').textContent = results.passRate;
+                document.getElementById('total-time').textContent = results.totalTime;
+            }
+
+            displayTestDetails(results) {
+                const resultsDiv = document.getElementById('test-results');
+                resultsDiv.innerHTML = '';
+
+                results.results.forEach((test, index) => {
+                    const testDiv = document.createElement('div');
+                    testDiv.className = `test-item test-${test.passed ? 'passed' : (test.error ? 'failed' : 'skipped')}`;
+                    
+                    const statusIcon = test.passed ? '✅' : (test.error ? '❌' : '⚠️');
+                    const duration = test.duration ? ` (${test.duration.toFixed(2)}ms)` : '';
+                    
+                    testDiv.innerHTML = `
+                        <div>
+                            <strong>${statusIcon} ${test.name}</strong>${duration}
+                            ${test.details ? `<button class="toggle-details" onclick="toggleDetails(${index})">Show Details</button>` : ''}
+                            ${test.error ? `<div style="color: #dc3545; margin-top: 5px;">Error: ${test.error}</div>` : ''}
+                        </div>
+                        ${test.details ? `<div id="details-${index}" class="test-details">${this.formatTestDetails(test.details)}</div>` : ''}
+                    `;
+
+                    resultsDiv.appendChild(testDiv);
+                });
+            }
+
+            displayPerformanceMetrics(results) {
+                const metricsDiv = document.getElementById('performance-metrics');
+                metricsDiv.style.display = 'block';
+
+                if (results.shaderManagerMetrics) {
+                    document.getElementById('compilation-metrics').innerHTML = `
+                        Total Time: ${results.shaderManagerMetrics.totalCompilationTime.toFixed(2)}ms<br>
+                        Shaders: ${results.shaderManagerMetrics.shadersCompiled}<br>
+                        Pipelines: ${results.shaderManagerMetrics.pipelinesCreated}
+                    `;
+                }
+
+                if (results.bufferManagerMetrics) {
+                    document.getElementById('memory-metrics').innerHTML = `
+                        Total Memory: ${results.bufferManagerMetrics.totalMemoryFormatted}<br>
+                        Buffers: ${results.bufferManagerMetrics.bufferCount}<br>
+                        Bind Groups: ${results.bufferManagerMetrics.bindGroupCount}
+                    `;
+                }
+
+                document.getElementById('pipeline-metrics').innerHTML = `
+                    Available Pipelines: ${results.shaderManagerMetrics?.availablePipelines?.length || 0}<br>
+                    Available Layouts: ${results.shaderManagerMetrics?.availableLayouts?.length || 0}
+                `;
+            }
+
+            formatTestDetails(details) {
+                return '<pre>' + JSON.stringify(details, null, 2) + '</pre>';
+            }
+
+            displayError(error) {
+                const resultsDiv = document.getElementById('test-results');
+                resultsDiv.innerHTML = `
+                    <div class="test-item test-failed">
+                        <strong>❌ Test Execution Failed</strong>
+                        <div style="margin-top: 10px; color: #dc3545;">
+                            ${error.message}
+                        </div>
+                        <div class="test-details" style="display: block;">
+                            <pre>${error.stack || 'No stack trace available'}</pre>
+                        </div>
+                    </div>
+                `;
+            }
+
+            showLoading(show) {
+                const loadingDiv = document.querySelector('.loading');
+                loadingDiv.style.display = show ? 'block' : 'none';
+            }
+
+            setButtonsDisabled(disabled) {
+                document.querySelectorAll('button').forEach(btn => {
+                    if (btn.id !== 'clear-results') {
+                        btn.disabled = disabled;
+                    }
+                });
+            }
+
+            clearResults() {
+                document.getElementById('test-results').innerHTML = '<p>Results cleared. Click "Run All Tests" to begin testing.</p>';
+                document.getElementById('test-summary').style.display = 'none';
+                document.getElementById('performance-metrics').style.display = 'none';
+                
+                if (this.shaderTests) {
+                    this.shaderTests.destroy();
+                    this.shaderTests = null;
+                }
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        }
+
+        // Global function for toggling test details
+        window.toggleDetails = function(index) {
+            const detailsDiv = document.getElementById(`details-${index}`);
+            const isVisible = detailsDiv.style.display === 'block';
+            detailsDiv.style.display = isVisible ? 'none' : 'block';
+            
+            const button = detailsDiv.previousElementSibling.querySelector('.toggle-details');
+            button.textContent = isVisible ? 'Show Details' : 'Hide Details';
+        };
+
+        // Initialize test runner when page loads
+        window.addEventListener('load', () => {
+            new TestRunner();
+        });
+    </script>
+</body>
+</html>
