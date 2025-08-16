@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase 2.4: GPU-Accelerated Forward Pass - Complete Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .demo-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #fafafa;
+        }
+        
+        .demo-section h2 {
+            margin-top: 0;
+            color: #667eea;
+            font-size: 1.5em;
+        }
+        
+        .demo-section h3 {
+            color: #764ba2;
+            margin-bottom: 10px;
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .status.warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        
+        .log {
+            background: #2d2d2d;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin: 10px 0;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .metric {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .metric-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .feature {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .feature h4 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        
+        .feature-status {
+            float: right;
+            font-size: 1.2em;
+        }
+        
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        
+        .results-table th,
+        .results-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .results-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .footer {
+            background: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            border-top: 1px solid #e0e0e0;
+            color: #666;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .metrics {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Phase 2.4: GPU-Accelerated Forward Pass</h1>
+            <p>Complete WebGPU Neural Network Implementation for Two-Wheel Balancing Robot</p>
+        </div>
+        
+        <div class="content">
+            <!-- System Status -->
+            <div class="demo-section">
+                <h2>🖥️ System Status</h2>
+                <div id="systemStatus" class="status info">
+                    Initializing...
+                </div>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="metric-value" id="webgpuSupport">❓</div>
+                        <div class="metric-label">WebGPU Support</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="deviceInfo">Unknown</div>
+                        <div class="metric-label">GPU Device</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="memoryInfo">Unknown</div>
+                        <div class="metric-label">Device Memory</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Demo Controls -->
+            <div class="demo-section">
+                <h2>🎮 Demo Controls</h2>
+                <button class="button" id="runQuickTest">Quick Test</button>
+                <button class="button" id="runFullDemo">Full Demo</button>
+                <button class="button" id="runBenchmark">Performance Benchmark</button>
+                <button class="button" id="runAccuracyTest">Accuracy Verification</button>
+                <button class="button" id="clearLog">Clear Log</button>
+                
+                <div class="progress">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div id="currentTask">Ready to start</div>
+            </div>
+            
+            <!-- Phase 2.4 Features -->
+            <div class="demo-section">
+                <h2>✨ Phase 2.4 Features</h2>
+                <div class="features">
+                    <div class="feature">
+                        <h4>GPU-Accelerated Forward Pass <span class="feature-status" id="forwardPassStatus">❓</span></h4>
+                        <p>Complete WebGPU compute shader implementation with proper command encoding and buffer synchronization.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Batch Processing <span class="feature-status" id="batchStatus">❓</span></h4>
+                        <p>Optimized batch processing for training scenarios with variable batch sizes and efficient GPU utilization.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Async Operations <span class="feature-status" id="asyncStatus">❓</span></h4>
+                        <p>Comprehensive async GPU operation handling with proper error management and timeout controls.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Numerical Accuracy <span class="feature-status" id="accuracyStatus">❓</span></h4>
+                        <p>Extensive verification against CPU implementation ensuring numerical precision and correctness.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Performance Benchmarking <span class="feature-status" id="performanceStatus">❓</span></h4>
+                        <p>Comprehensive performance analysis with statistical benchmarking vs CPU implementation.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Q-Learning Integration <span class="feature-status" id="qlearningStatus">❓</span></h4>
+                        <p>Seamless integration with existing QLearning training system for efficient reinforcement learning.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Real-time Inference <span class="feature-status" id="realtimeStatus">❓</span></h4>
+                        <p>Sub-5ms inference capability with adaptive optimization for real-time robot control applications.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Production Ready <span class="feature-status" id="productionStatus">❓</span></h4>
+                        <p>Comprehensive error handling, fallback mechanisms, and health monitoring for production deployment.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Results -->
+            <div class="demo-section">
+                <h2>📊 Results</h2>
+                <div id="resultsContainer">
+                    <p>Run a demo to see results...</p>
+                </div>
+            </div>
+            
+            <!-- Performance Metrics -->
+            <div class="demo-section">
+                <h2>⚡ Performance Metrics</h2>
+                <div class="metrics" id="performanceMetrics">
+                    <div class="metric">
+                        <div class="metric-value" id="speedup">-</div>
+                        <div class="metric-label">GPU Speedup</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="latency">-</div>
+                        <div class="metric-label">Inference Latency</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="throughput">-</div>
+                        <div class="metric-label">Throughput (inf/sec)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="accuracy">-</div>
+                        <div class="metric-label">Numerical Accuracy</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Console Log -->
+            <div class="demo-section">
+                <h2>📝 Console Log</h2>
+                <div class="log" id="consoleLog">WebGPU Neural Network Demo - Ready\n</div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Phase 2.4 Implementation - Two-Wheel Balancing Robot RL with WebGPU Acceleration</p>
+            <p>Complete GPU-accelerated neural network forward pass with production-ready features</p>
+        </div>
+    </div>
+
+    <script type="module">
+        // Demo state
+        let demoRunning = false;
+        let demoResults = null;
+        
+        // DOM elements
+        const systemStatus = document.getElementById('systemStatus');
+        const webgpuSupport = document.getElementById('webgpuSupport');
+        const deviceInfo = document.getElementById('deviceInfo');
+        const memoryInfo = document.getElementById('memoryInfo');
+        const progressBar = document.getElementById('progressBar');
+        const currentTask = document.getElementById('currentTask');
+        const consoleLog = document.getElementById('consoleLog');
+        const resultsContainer = document.getElementById('resultsContainer');
+        
+        // Feature status elements
+        const featureElements = {
+            forwardPass: document.getElementById('forwardPassStatus'),
+            batch: document.getElementById('batchStatus'),
+            async: document.getElementById('asyncStatus'),
+            accuracy: document.getElementById('accuracyStatus'),
+            performance: document.getElementById('performanceStatus'),
+            qlearning: document.getElementById('qlearningStatus'),
+            realtime: document.getElementById('realtimeStatus'),
+            production: document.getElementById('productionStatus')
+        };
+        
+        // Performance metric elements
+        const metricElements = {
+            speedup: document.getElementById('speedup'),
+            latency: document.getElementById('latency'),
+            throughput: document.getElementById('throughput'),
+            accuracy: document.getElementById('accuracy')
+        };
+        
+        // Button elements
+        const buttons = {
+            quickTest: document.getElementById('runQuickTest'),
+            fullDemo: document.getElementById('runFullDemo'),
+            benchmark: document.getElementById('runBenchmark'),
+            accuracy: document.getElementById('runAccuracyTest'),
+            clearLog: document.getElementById('clearLog')
+        };
+        
+        // Initialize demo
+        async function initializeDemo() {
+            logMessage('Initializing Phase 2.4 Demo...');
+            
+            try {
+                // Check WebGPU support
+                if (!navigator.gpu) {
+                    throw new Error('WebGPU not supported');
+                }
+                
+                webgpuSupport.textContent = '✅';
+                webgpuSupport.style.color = 'green';
+                
+                // Get adapter info
+                const adapter = await navigator.gpu.requestAdapter();
+                if (adapter) {
+                    deviceInfo.textContent = adapter.info?.vendor || 'Available';
+                    
+                    // Check device memory if available
+                    if (navigator.deviceMemory) {
+                        memoryInfo.textContent = navigator.deviceMemory + 'GB';
+                    } else {
+                        memoryInfo.textContent = 'Unknown';
+                    }
+                }
+                
+                systemStatus.textContent = 'WebGPU Ready - Phase 2.4 Implementation Available';
+                systemStatus.className = 'status success';
+                
+                logMessage('✅ Demo initialization complete');
+                
+            } catch (error) {
+                webgpuSupport.textContent = '❌';
+                webgpuSupport.style.color = 'red';
+                deviceInfo.textContent = 'Not Available';
+                
+                systemStatus.textContent = 'WebGPU not available - CPU fallback will be used';
+                systemStatus.className = 'status warning';
+                
+                logMessage('⚠️ WebGPU not available: ' + error.message);
+            }
+        }
+        
+        // Log message to console
+        function logMessage(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            consoleLog.textContent += `[${timestamp}] ${message}\n`;
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+        
+        // Update progress
+        function updateProgress(percent, task) {
+            progressBar.style.width = percent + '%';
+            currentTask.textContent = task;
+        }
+        
+        // Update feature status
+        function updateFeatureStatus(feature, status) {
+            const element = featureElements[feature];
+            if (element) {
+                element.textContent = status === 'passed' ? '✅' : 
+                                    status === 'failed' ? '❌' : 
+                                    status === 'running' ? '⏳' : '❓';
+                element.style.color = status === 'passed' ? 'green' : 
+                                     status === 'failed' ? 'red' : 
+                                     status === 'running' ? 'orange' : 'gray';
+            }
+        }
+        
+        // Update performance metrics
+        function updateMetrics(results) {
+            if (results.performance) {
+                const perf = results.performance;
+                metricElements.speedup.textContent = perf.summary?.overallSpeedup?.toFixed(1) + 'x' || '-';
+                metricElements.latency.textContent = perf.singleInference?.gpu?.median?.toFixed(2) + 'ms' || '-';
+                metricElements.throughput.textContent = perf.singleInference?.throughput?.gpu?.toFixed(0) || '-';
+            }
+            
+            if (results.accuracy) {
+                metricElements.accuracy.textContent = (results.accuracy.overallAccuracy * 100).toFixed(1) + '%';
+            }
+        }
+        
+        // Display results
+        function displayResults(results) {
+            const container = resultsContainer;
+            container.innerHTML = '';
+            
+            if (results.assessment) {
+                const assessment = results.assessment;
+                
+                // Overall score
+                const scoreDiv = document.createElement('div');
+                scoreDiv.className = 'status ' + (assessment.summary.readyForProduction ? 'success' : 'warning');
+                scoreDiv.innerHTML = `
+                    <strong>Overall Score: ${assessment.overallScore.toFixed(1)}/100 (Grade: ${assessment.summary.grade})</strong><br>
+                    Production Ready: ${assessment.summary.readyForProduction ? '✅' : '❌'}
+                `;
+                container.appendChild(scoreDiv);
+                
+                // Category breakdown
+                const table = document.createElement('table');
+                table.className = 'results-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Score</th>
+                            <th>Weight</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${Object.entries(assessment.categories).map(([name, cat]) => `
+                            <tr>
+                                <td>${name}</td>
+                                <td>${cat.score.toFixed(1)}/100</td>
+                                <td>${cat.weight}%</td>
+                                <td>${cat.score >= 90 ? '✅' : cat.score >= 70 ? '⚠️' : '❌'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+                container.appendChild(table);
+                
+                // Recommendations
+                if (assessment.recommendations.length > 0) {
+                    const recDiv = document.createElement('div');
+                    recDiv.className = 'status info';
+                    recDiv.innerHTML = '<strong>Recommendations:</strong><br>' + 
+                        assessment.recommendations.map(r => '• ' + r).join('<br>');
+                    container.appendChild(recDiv);
+                }
+            }
+        }
+        
+        // Enable/disable buttons
+        function setButtonsEnabled(enabled) {
+            Object.values(buttons).forEach(button => {
+                if (button !== buttons.clearLog) {
+                    button.disabled = !enabled;
+                }
+            });
+        }
+        
+        // Run quick test
+        async function runQuickTest() {
+            logMessage('🚀 Starting Quick Test...');
+            demoRunning = true;
+            setButtonsEnabled(false);
+            updateProgress(0, 'Starting quick test...');
+            
+            try {
+                // Import and run quick test
+                const { quickPhase24Test } = await import('./Phase24Demo.js');
+                
+                updateProgress(50, 'Running Phase 2.4 quick test...');
+                const success = await quickPhase24Test();
+                
+                updateProgress(100, 'Quick test complete');
+                
+                if (success) {
+                    logMessage('✅ Quick test PASSED');
+                    systemStatus.textContent = 'Quick Test: PASSED - Core functionality working';
+                    systemStatus.className = 'status success';
+                } else {
+                    logMessage('❌ Quick test FAILED');
+                    systemStatus.textContent = 'Quick Test: FAILED - Check console for details';
+                    systemStatus.className = 'status error';
+                }
+                
+            } catch (error) {
+                logMessage('❌ Quick test error: ' + error.message);
+                systemStatus.textContent = 'Quick Test: ERROR - ' + error.message;
+                systemStatus.className = 'status error';
+            } finally {
+                demoRunning = false;
+                setButtonsEnabled(true);
+                updateProgress(0, 'Ready');
+            }
+        }
+        
+        // Run full demo
+        async function runFullDemo() {
+            logMessage('🚀 Starting Full Phase 2.4 Demo...');
+            demoRunning = true;
+            setButtonsEnabled(false);
+            
+            try {
+                // Import demo
+                const { runPhase24Demo } = await import('./Phase24Demo.js');
+                
+                // Setup progress tracking
+                let currentPhase = 0;
+                const phases = [
+                    'System Validation',
+                    'Forward Pass',
+                    'Batch Processing', 
+                    'Accuracy Verification',
+                    'Performance Benchmarking',
+                    'Q-Learning Integration',
+                    'Real-time Inference',
+                    'Production System',
+                    'Assessment'
+                ];
+                
+                // Update progress periodically
+                const progressTimer = setInterval(() => {
+                    if (currentPhase < phases.length) {
+                        updateProgress((currentPhase / phases.length) * 100, phases[currentPhase]);
+                        currentPhase++;
+                    }
+                }, 2000);
+                
+                // Run demo
+                const results = await runPhase24Demo();
+                clearInterval(progressTimer);
+                
+                updateProgress(100, 'Demo complete');
+                demoResults = results;
+                
+                // Update feature statuses
+                updateFeatureStatus('forwardPass', results.forwardPass?.passed ? 'passed' : 'failed');
+                updateFeatureStatus('batch', results.batchProcessing?.batchEfficiency >= 1.2 ? 'passed' : 'failed');
+                updateFeatureStatus('accuracy', results.accuracy?.overallPassed ? 'passed' : 'failed');
+                updateFeatureStatus('performance', results.performance?.summary?.productionReady ? 'passed' : 'failed');
+                updateFeatureStatus('qlearning', results.qlearning?.initialization?.success ? 'passed' : 'failed');
+                updateFeatureStatus('realtime', results.realTime?.realTimeCapable ? 'passed' : 'failed');
+                updateFeatureStatus('production', results.production?.readinessCheck?.ready ? 'passed' : 'failed');
+                
+                // Update metrics
+                updateMetrics(results);
+                
+                // Display results
+                displayResults(results);
+                
+                logMessage(`✅ Full demo complete: ${results.assessment.overallScore.toFixed(1)}/100`);
+                logMessage(`Total execution time: ${results.totalTime.toFixed(2)}ms`);
+                
+            } catch (error) {
+                logMessage('❌ Full demo error: ' + error.message);
+                console.error('Demo error:', error);
+            } finally {
+                demoRunning = false;
+                setButtonsEnabled(true);
+                updateProgress(0, 'Ready');
+            }
+        }
+        
+        // Run benchmark only
+        async function runBenchmark() {
+            logMessage('🏁 Starting Performance Benchmark...');
+            // Implementation would run just the performance benchmark
+            logMessage('⚠️ Benchmark demo not implemented yet');
+        }
+        
+        // Run accuracy test only
+        async function runAccuracyTest() {
+            logMessage('🎯 Starting Accuracy Verification...');
+            // Implementation would run just the accuracy verification
+            logMessage('⚠️ Accuracy test demo not implemented yet');
+        }
+        
+        // Clear log
+        function clearLog() {
+            consoleLog.textContent = 'WebGPU Neural Network Demo - Ready\n';
+        }
+        
+        // Event listeners
+        buttons.quickTest.addEventListener('click', runQuickTest);
+        buttons.fullDemo.addEventListener('click', runFullDemo);
+        buttons.benchmark.addEventListener('click', runBenchmark);
+        buttons.accuracy.addEventListener('click', runAccuracyTest);
+        buttons.clearLog.addEventListener('click', clearLog);
+        
+        // Override console.log to capture output
+        const originalLog = console.log;
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            logMessage(args.join(' '));
+        };
+        
+        const originalWarn = console.warn;
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            logMessage('⚠️ ' + args.join(' '));
+        };
+        
+        const originalError = console.error;
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            logMessage('❌ ' + args.join(' '));
+        };
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initializeDemo);
+    </script>
+</body>
+</html>
