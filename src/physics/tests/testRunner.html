@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Tests - Two-Wheel Balancing Robot</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007acc;
+            padding-bottom: 10px;
+        }
+        .test-controls {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007acc;
+        }
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #005999;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        .test-pass {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .test-fail {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .log {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .physics-demo {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+        }
+        #demoCanvas {
+            border: 1px solid #ccc;
+            background: white;
+            display: block;
+            margin: 20px auto;
+        }
+        .demo-controls {
+            text-align: center;
+            margin: 15px 0;
+        }
+        .parameter-control {
+            display: inline-block;
+            margin: 10px;
+            text-align: left;
+        }
+        .parameter-control label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .parameter-control input[type="range"] {
+            width: 150px;
+        }
+        .parameter-control span {
+            margin-left: 10px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Physics Simulation Tests</h1>
+        <p>This page tests the physics simulation for the two-wheel balancing robot reinforcement learning application.</p>
+
+        <div class="test-controls">
+            <h3>Test Controls</h3>
+            <button id="runTests" onclick="runTests()">Run All Tests</button>
+            <button id="runSingleTest" onclick="runSingleTest()">Run Single Test</button>
+            <button id="clearResults" onclick="clearResults()">Clear Results</button>
+            
+            <select id="singleTestSelect">
+                <option value="RobotState Class">RobotState Class</option>
+                <option value="BalancingRobot Construction">BalancingRobot Construction</option>
+                <option value="Parameter Validation">Parameter Validation</option>
+                <option value="Physics Stability">Physics Stability</option>
+                <option value="Reward Function">Reward Function</option>
+                <option value="Boundary Conditions">Boundary Conditions</option>
+                <option value="Reset Functionality">Reset Functionality</option>
+                <option value="Utility Functions">Utility Functions</option>
+                <option value="Numerical Stability">Numerical Stability</option>
+                <option value="Long Running Simulation">Long Running Simulation</option>
+            </select>
+        </div>
+
+        <div id="results">
+            <p>Click "Run All Tests" to start testing the physics simulation...</p>
+        </div>
+
+        <div class="physics-demo">
+            <h3>🎮 Interactive Physics Demo</h3>
+            <p>Try controlling the robot with different parameters and motor inputs!</p>
+            
+            <canvas id="demoCanvas" width="800" height="400"></canvas>
+            
+            <div class="demo-controls">
+                <button id="startDemo" onclick="startDemo()">Start Demo</button>
+                <button id="stopDemo" onclick="stopDemo()">Stop Demo</button>
+                <button id="resetDemo" onclick="resetDemo()">Reset Robot</button>
+            </div>
+
+            <div style="text-align: center;">
+                <div class="parameter-control">
+                    <label>Motor Torque:</label>
+                    <input type="range" id="motorTorque" min="-5" max="5" step="0.1" value="0">
+                    <span id="motorTorqueValue">0.0</span>
+                </div>
+                <div class="parameter-control">
+                    <label>Robot Mass (kg):</label>
+                    <input type="range" id="robotMass" min="0.5" max="3.0" step="0.1" value="1.0">
+                    <span id="robotMassValue">1.0</span>
+                </div>
+                <div class="parameter-control">
+                    <label>Height (m):</label>
+                    <input type="range" id="robotHeight" min="0.2" max="1.0" step="0.05" value="0.5">
+                    <span id="robotHeightValue">0.5</span>
+                </div>
+            </div>
+
+            <div id="demoStatus" style="text-align: center; margin-top: 15px; font-family: monospace;"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { PhysicsTests } from './PhysicsTests.js';
+        import { BalancingRobot, RobotState } from '../BalancingRobot.js';
+
+        let currentTests = null;
+        let demoRobot = null;
+        let demoAnimationId = null;
+        let demoCanvas = null;
+        let demoCtx = null;
+
+        // Make functions available globally
+        window.runTests = runTests;
+        window.runSingleTest = runSingleTest;
+        window.clearResults = clearResults;
+        window.startDemo = startDemo;
+        window.stopDemo = stopDemo;
+        window.resetDemo = resetDemo;
+
+        function runTests() {
+            const button = document.getElementById('runTests');
+            button.disabled = true;
+            button.textContent = 'Running Tests...';
+            
+            setTimeout(() => {
+                currentTests = new PhysicsTests();
+                const results = currentTests.runAllTests();
+                displayResults(results);
+                
+                button.disabled = false;
+                button.textContent = 'Run All Tests';
+            }, 100);
+        }
+
+        function runSingleTest() {
+            const select = document.getElementById('singleTestSelect');
+            const testName = select.value;
+            
+            console.log(`Running single test: ${testName}`);
+            
+            currentTests = new PhysicsTests();
+            
+            // Run specific test based on selection
+            try {
+                switch(testName) {
+                    case 'RobotState Class':
+                        currentTests.testRobotStateClass();
+                        break;
+                    case 'BalancingRobot Construction':
+                        currentTests.testBalancingRobotConstruction();
+                        break;
+                    case 'Parameter Validation':
+                        currentTests.testParameterValidation();
+                        break;
+                    case 'Physics Stability':
+                        currentTests.testPhysicsStability();
+                        break;
+                    case 'Reward Function':
+                        currentTests.testRewardFunction();
+                        break;
+                    case 'Boundary Conditions':
+                        currentTests.testBoundaryConditions();
+                        break;
+                    case 'Reset Functionality':
+                        currentTests.testResetFunctionality();
+                        break;
+                    case 'Utility Functions':
+                        currentTests.testUtilityFunctions();
+                        break;
+                    case 'Numerical Stability':
+                        currentTests.testNumericalStability();
+                        break;
+                    case 'Long Running Simulation':
+                        currentTests.testLongRunningSimulation();
+                        break;
+                }
+                
+                const results = currentTests.summarizeResults();
+                displayResults(results);
+            } catch (error) {
+                console.error('Test error:', error);
+                document.getElementById('results').innerHTML = 
+                    `<div class="test-fail">Test Error: ${error.message}</div>`;
+            }
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = 
+                '<p>Results cleared. Click "Run All Tests" to start testing...</p>';
+        }
+
+        function displayResults(results) {
+            const resultsDiv = document.getElementById('results');
+            
+            let html = '<div class="log">';
+            
+            results.results.forEach(result => {
+                const className = result.passed ? 'test-pass' : 'test-fail';
+                const status = result.passed ? '✓ PASS' : '✗ FAIL';
+                html += `<div class="${className}">${status}: ${result.testName} - ${result.message}</div>`;
+            });
+            
+            html += '</div>';
+            
+            html += `<div class="summary">
+                Test Summary: ${results.passedTests}/${results.totalTests} tests passed 
+                (${results.successRate.toFixed(1)}% success rate)
+            </div>`;
+            
+            resultsDiv.innerHTML = html;
+        }
+
+        function initDemo() {
+            demoCanvas = document.getElementById('demoCanvas');
+            demoCtx = demoCanvas.getContext('2d');
+            demoRobot = new BalancingRobot();
+            
+            // Set up parameter controls
+            const motorTorqueSlider = document.getElementById('motorTorque');
+            const massSlider = document.getElementById('robotMass');
+            const heightSlider = document.getElementById('robotHeight');
+            
+            motorTorqueSlider.addEventListener('input', (e) => {
+                document.getElementById('motorTorqueValue').textContent = e.target.value;
+            });
+            
+            massSlider.addEventListener('input', (e) => {
+                document.getElementById('robotMassValue').textContent = e.target.value;
+                updateRobotParameters();
+            });
+            
+            heightSlider.addEventListener('input', (e) => {
+                document.getElementById('robotHeightValue').textContent = e.target.value;
+                updateRobotParameters();
+            });
+        }
+
+        function updateRobotParameters() {
+            const mass = parseFloat(document.getElementById('robotMass').value);
+            const height = parseFloat(document.getElementById('robotHeight').value);
+            
+            demoRobot = new BalancingRobot({
+                mass: mass,
+                centerOfMassHeight: height,
+                motorStrength: 5.0
+            });
+        }
+
+        function startDemo() {
+            if (demoAnimationId) return;
+            
+            demoAnimationId = requestAnimationFrame(demoLoop);
+            document.getElementById('startDemo').disabled = true;
+            document.getElementById('stopDemo').disabled = false;
+        }
+
+        function stopDemo() {
+            if (demoAnimationId) {
+                cancelAnimationFrame(demoAnimationId);
+                demoAnimationId = null;
+            }
+            document.getElementById('startDemo').disabled = false;
+            document.getElementById('stopDemo').disabled = true;
+        }
+
+        function resetDemo() {
+            demoRobot.reset();
+        }
+
+        function demoLoop() {
+            // Get motor torque from slider
+            const motorTorque = parseFloat(document.getElementById('motorTorque').value);
+            
+            // Step physics
+            const result = demoRobot.step(motorTorque);
+            
+            // Reset if robot fell
+            if (result.done) {
+                demoRobot.reset();
+            }
+            
+            // Render
+            renderRobot();
+            
+            // Update status
+            updateDemoStatus(result);
+            
+            // Continue animation
+            demoAnimationId = requestAnimationFrame(demoLoop);
+        }
+
+        function renderRobot() {
+            const ctx = demoCtx;
+            const canvas = demoCanvas;
+            
+            // Clear canvas
+            ctx.fillStyle = '#f0f8ff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Set up coordinate system (center at bottom middle)
+            const centerX = canvas.width / 2;
+            const groundY = canvas.height - 50;
+            const scale = 200; // pixels per meter
+            
+            const state = demoRobot.getState();
+            const config = demoRobot.getConfig();
+            
+            // Draw ground
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY);
+            ctx.lineTo(canvas.width, groundY);
+            ctx.stroke();
+            
+            // Calculate robot position
+            const robotX = centerX + state.position * scale;
+            const robotY = groundY;
+            
+            // Draw wheels
+            ctx.fillStyle = '#333';
+            ctx.beginPath();
+            ctx.arc(robotX - 15, robotY, 8, 0, 2 * Math.PI);
+            ctx.arc(robotX + 15, robotY, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Draw robot body (pendulum)
+            const bodyLength = config.centerOfMassHeight * scale;
+            const bodyX = robotX + Math.sin(state.angle) * bodyLength;
+            const bodyY = robotY - Math.cos(state.angle) * bodyLength;
+            
+            // Robot body
+            ctx.strokeStyle = state.hasFailed() ? '#ff4444' : '#007acc';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(robotX, robotY);
+            ctx.lineTo(bodyX, bodyY);
+            ctx.stroke();
+            
+            // Robot head/mass
+            ctx.fillStyle = state.hasFailed() ? '#ff4444' : '#007acc';
+            ctx.beginPath();
+            ctx.arc(bodyX, bodyY, 12, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Draw angle indicator
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(robotX, robotY);
+            ctx.lineTo(robotX, robotY - bodyLength);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Draw angle arc
+            if (Math.abs(state.angle) > 0.05) {
+                ctx.strokeStyle = state.hasFailed() ? '#ff4444' : '#ffa500';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(robotX, robotY, 30, -Math.PI/2, -Math.PI/2 + state.angle);
+                ctx.stroke();
+            }
+            
+            // Draw motor torque indicator
+            const stats = demoRobot.getStats();
+            if (Math.abs(stats.currentMotorTorque) > 0.1) {
+                const torqueScale = 20;
+                const torqueLength = Math.abs(stats.currentMotorTorque) * torqueScale;
+                const torqueColor = stats.currentMotorTorque > 0 ? '#00ff00' : '#ff8800';
+                
+                ctx.strokeStyle = torqueColor;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(robotX, robotY + 20);
+                if (stats.currentMotorTorque > 0) {
+                    ctx.lineTo(robotX + torqueLength, robotY + 20);
+                    ctx.moveTo(robotX + torqueLength - 5, robotY + 15);
+                    ctx.lineTo(robotX + torqueLength, robotY + 20);
+                    ctx.lineTo(robotX + torqueLength - 5, robotY + 25);
+                } else {
+                    ctx.lineTo(robotX - torqueLength, robotY + 20);
+                    ctx.moveTo(robotX - torqueLength + 5, robotY + 15);
+                    ctx.lineTo(robotX - torqueLength, robotY + 20);
+                    ctx.lineTo(robotX - torqueLength + 5, robotY + 25);
+                }
+                ctx.stroke();
+            }
+        }
+
+        function updateDemoStatus(result) {
+            const state = demoRobot.getState();
+            const stats = demoRobot.getStats();
+            
+            const statusDiv = document.getElementById('demoStatus');
+            statusDiv.innerHTML = `
+                Angle: ${(state.angle * 180 / Math.PI).toFixed(1)}°  |  
+                Angular Vel: ${state.angularVelocity.toFixed(2)} rad/s  |  
+                Position: ${state.position.toFixed(2)} m  |  
+                Reward: ${result.reward.toFixed(1)}  |  
+                Step: ${stats.stepCount}
+                ${result.done ? '  |  <span style="color: red;">FAILED</span>' : ''}
+            `;
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initDemo);
+    </script>
+</body>
+</html>
