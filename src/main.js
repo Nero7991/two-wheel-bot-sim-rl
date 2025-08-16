@@ -3,6 +3,9 @@
  * WebGPU-accelerated machine learning environment with 2D visualization
  */
 
+// Import WebGPU polyfill first to ensure constants are available
+import './network/shaders/webgpu-polyfill.js';
+
 // Core module imports
 import { createRenderer } from './visualization/Renderer.js';
 import { createDefaultRobot } from './physics/BalancingRobot.js';
@@ -160,9 +163,56 @@ class UIControls {
                     e.preventDefault();
                     this.app.switchDemoMode('evaluation');
                     break;
+                case '4': // 4 - manual control mode
+                    e.preventDefault();
+                    this.app.switchDemoMode('manual');
+                    break;
                 case 'h': // H - toggle help/debug info
                     e.preventDefault();
                     this.app.renderer.toggleUI('robot');
+                    break;
+            }
+        });
+        
+        // Manual control arrow keys - separate handlers for keydown/keyup
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            if (!this.app.manualControl.enabled) return;
+            
+            switch (e.key) {
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    this.app.manualControl.leftPressed = true;
+                    this.app.updateManualTorque();
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    this.app.manualControl.rightPressed = true;
+                    this.app.updateManualTorque();
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    if (!this.app.isTraining) {
+                        this.app.resetRobotPosition();
+                    }
+                    break;
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            if (!this.app.manualControl.enabled) return;
+            
+            switch (e.key) {
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    this.app.manualControl.leftPressed = false;
+                    this.app.updateManualTorque();
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    this.app.manualControl.rightPressed = false;
+                    this.app.updateManualTorque();
                     break;
             }
         });
@@ -271,7 +321,16 @@ class TwoWheelBotRL {
         this.targetPhysicsStepsPerFrame = 1;
         
         // Demo modes
-        this.demoMode = 'physics'; // 'physics', 'training', 'evaluation'
+        this.demoMode = 'physics'; // 'physics', 'training', 'evaluation', 'manual'
+        
+        // Manual control state
+        this.manualControl = {
+            enabled: false,
+            leftPressed: false,
+            rightPressed: false,
+            upPressed: false,
+            manualTorque: 0
+        };
         
         // Physics simulation timing
         this.lastPhysicsUpdate = 0;
@@ -523,20 +582,38 @@ class TwoWheelBotRL {
         const container = document.getElementById('main-container');
         const controlsPanel = document.getElementById('controls-panel');
         
-        const availableWidth = container.clientWidth - controlsPanel.clientWidth;
-        const availableHeight = container.clientHeight;
+        // Calculate available space for canvas
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+        const controlsPanelWidth = controlsPanel ? controlsPanel.offsetWidth : 300;
         
-        const newWidth = Math.max(800, availableWidth - 2);
-        const newHeight = Math.max(600, availableHeight - 2);
+        // Canvas should take all available width minus controls panel
+        const availableWidth = containerWidth - controlsPanelWidth;
+        const availableHeight = containerHeight;
         
+        // Use device pixel ratio for crisp rendering on high-DPI displays
+        const dpr = window.devicePixelRatio || 1;
+        
+        // Set canvas display size (CSS pixels)
+        this.canvas.style.width = availableWidth + 'px';
+        this.canvas.style.height = availableHeight + 'px';
+        
+        // Set canvas actual size (device pixels)
+        const actualWidth = availableWidth * dpr;
+        const actualHeight = availableHeight * dpr;
+        
+        this.canvas.width = actualWidth;
+        this.canvas.height = actualHeight;
+        
+        // Update renderer with new dimensions
         if (this.renderer) {
-            this.renderer.resize(newWidth, newHeight);
-        } else {
-            this.canvas.width = newWidth;
-            this.canvas.height = newHeight;
+            this.renderer.resize(actualWidth, actualHeight);
+            // Reset the canvas context scale after renderer resize
+            const ctx = this.canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         
-        console.log('Canvas resized to:', newWidth, 'x', newHeight);
+        console.log('Canvas resized to:', actualWidth, 'x', actualHeight, `(${availableWidth}x${availableHeight} display)`);
     }
 
     startSimulation() {
@@ -609,6 +686,9 @@ class TwoWheelBotRL {
                     break;
                 case 'evaluation':
                     motorTorque = this.getEvaluationTorque();
+                    break;
+                case 'manual':
+                    motorTorque = this.getManualTorque();
                     break;
             }
             
@@ -977,7 +1057,21 @@ class TwoWheelBotRL {
             document.getElementById('pause-training').textContent = 'Pause Training';
         }
         
+        // Disable manual control when leaving manual mode
+        if (this.demoMode === 'manual' && newMode !== 'manual') {
+            this.manualControl.enabled = false;
+            this.manualControl.leftPressed = false;
+            this.manualControl.rightPressed = false;
+            this.manualControl.manualTorque = 0;
+        }
+        
         this.demoMode = newMode;
+        
+        // Enable manual control when entering manual mode
+        if (newMode === 'manual') {
+            this.manualControl.enabled = true;
+            console.log('Manual control enabled. Use arrow keys: ← → to balance, ↑ to reset');
+        }
         
         // Initialize Q-learning if switching to training or evaluation mode
         if ((newMode === 'training' || newMode === 'evaluation') && !this.qlearning) {
@@ -1045,6 +1139,49 @@ class TwoWheelBotRL {
             config.motorStrength = strength;
             this.robot.updateConfig(config);
             console.log(`Motor strength updated to ${strength} Nm`);
+        }
+    }
+    
+    /**
+     * Update manual control torque based on pressed keys
+     */
+    updateManualTorque() {
+        const maxTorque = this.robot?.getConfig()?.motorStrength || 5.0;
+        
+        if (this.manualControl.leftPressed && this.manualControl.rightPressed) {
+            // Both pressed - no movement
+            this.manualControl.manualTorque = 0;
+        } else if (this.manualControl.leftPressed) {
+            // Left pressed - negative torque (move left)
+            this.manualControl.manualTorque = -maxTorque * 0.8;
+        } else if (this.manualControl.rightPressed) {
+            // Right pressed - positive torque (move right)
+            this.manualControl.manualTorque = maxTorque * 0.8;
+        } else {
+            // No keys pressed
+            this.manualControl.manualTorque = 0;
+        }
+    }
+    
+    /**
+     * Get manual control torque
+     */
+    getManualTorque() {
+        return this.manualControl.manualTorque;
+    }
+    
+    /**
+     * Reset robot position for manual control
+     */
+    resetRobotPosition() {
+        if (this.robot) {
+            this.robot.reset({
+                angle: 0,
+                angularVelocity: 0,
+                position: 0,
+                velocity: 0
+            });
+            console.log('Robot position reset');
         }
     }
 }
