@@ -369,6 +369,122 @@
         .control-section-content {
             padding-top: 0;
         }
+
+        /* Network Configuration Styles */
+        .preset-container {
+            margin: 8px 0;
+        }
+
+        .preset-container select {
+            width: 100%;
+            padding: 8px;
+            background-color: #404040;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            margin-top: 4px;
+        }
+
+        .preset-container select:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        .preset-description {
+            font-size: 0.8rem;
+            color: #ccc;
+            margin-top: 4px;
+            padding: 4px 8px;
+            background-color: #333;
+            border-radius: 3px;
+            border-left: 3px solid #00d4ff;
+        }
+
+        .architecture-builder {
+            margin-top: 12px;
+        }
+
+        .layer-controls {
+            margin-bottom: 12px;
+        }
+
+        .layer-controls label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+
+        .layer-configs {
+            margin: 12px 0;
+        }
+
+        .layer-config {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            padding: 8px;
+            background-color: #333;
+            border-radius: 4px;
+            border-left: 3px solid #00d4ff;
+        }
+
+        .layer-config label {
+            min-width: 80px;
+            font-size: 0.8rem;
+            color: #ccc;
+        }
+
+        .layer-config input {
+            flex: 1;
+            margin: 0 8px;
+        }
+
+        .layer-config .layer-value {
+            min-width: 40px;
+            text-align: right;
+            font-size: 0.8rem;
+            color: #00d4ff;
+        }
+
+        .architecture-summary {
+            margin-top: 12px;
+            padding: 12px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            border: 1px solid #404040;
+        }
+
+        .architecture-summary div {
+            margin: 4px 0;
+            font-size: 0.8rem;
+        }
+
+        #architecture-display {
+            font-family: monospace;
+            color: #00d4ff;
+            font-weight: bold;
+        }
+
+        #parameter-count {
+            color: #00ff88;
+        }
+
+        #memory-estimate {
+            color: #ffaa00;
+        }
+
+        .validation-error {
+            color: #ff4444;
+            font-size: 0.7rem;
+            margin-top: 4px;
+        }
+
+        .validation-warning {
+            color: #ffaa00;
+            font-size: 0.7rem;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -420,12 +536,42 @@
                     <h3>Network Configuration</h3>
                     <div class="control-section-content">
                     <div class="parameter-group">
-                        <h4>Architecture</h4>
-                        <div class="slider-container">
-                            <label for="hidden-neurons" class="tooltip" data-tooltip="Number of neurons in hidden layer (4-16)">
-                                Hidden Neurons: <span id="hidden-neurons-value" class="slider-value">8</span>
+                        <h4>Bot Model Presets</h4>
+                        <div class="preset-container">
+                            <label for="network-preset" class="tooltip" data-tooltip="Predefined network architectures for different bot types">
+                                Model Preset:
                             </label>
-                            <input type="range" id="hidden-neurons" min="4" max="16" step="1" value="8">
+                            <select id="network-preset">
+                                <option value="MICRO">Micro Bot (4 neurons, &lt;50 params)</option>
+                                <option value="NANO">Nano Bot (6 neurons, &lt;80 params)</option>
+                                <option value="CLASSIC" selected>Classic Bot (8 neurons, &lt;150 params)</option>
+                                <option value="ENHANCED">Enhanced Bot (12→8, &lt;400 params)</option>
+                                <option value="ADVANCED">Advanced Bot (16→12→8, &lt;800 params)</option>
+                                <option value="RESEARCH">Research Bot (32→24→16→8, &lt;2K params)</option>
+                                <option value="MAXIMUM">Maximum Bot (64→48→32→24→16, &lt;10K params)</option>
+                                <option value="CUSTOM">Custom Configuration</option>
+                            </select>
+                        </div>
+                        <div id="preset-description" class="preset-description">
+                            Standard two-wheel balancing robot (ESP32/STM32)
+                        </div>
+                    </div>
+                    
+                    <div class="parameter-group" id="custom-architecture" style="display: none;">
+                        <h4>Custom Architecture</h4>
+                        <div class="architecture-builder">
+                            <div class="layer-controls">
+                                <label>Number of Layers: <span id="layer-count-value">1</span></label>
+                                <input type="range" id="layer-count" min="1" max="8" step="1" value="1">
+                            </div>
+                            <div id="layer-configs" class="layer-configs">
+                                <!-- Dynamic layer configuration will be inserted here -->
+                            </div>
+                            <div class="architecture-summary">
+                                <div id="architecture-display">Input(2) → Hidden(8) → Output(3)</div>
+                                <div id="parameter-count">Total Parameters: 43</div>
+                                <div id="memory-estimate">Memory: ~0.2 KB</div>
+                            </div>
                         </div>
                     </div>
                     

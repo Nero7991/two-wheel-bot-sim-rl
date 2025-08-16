@@ -9,6 +9,7 @@ import './network/shaders/webgpu-polyfill.js';
 // Core module imports
 import { createRenderer } from './visualization/Renderer.js';
 import { createPerformanceCharts } from './visualization/Charts.js';
+import { NetworkPresets, getPreset, createCustomArchitecture } from './network/NetworkPresets.js';
 import { createDefaultRobot } from './physics/BalancingRobot.js';
 import { createDefaultQLearning } from './training/QLearning.js';
 import { WebGPUBackend, checkWebGPUAvailability } from './network/WebGPUBackend.js';
@@ -31,6 +32,13 @@ class UIControls {
             robotHeight: 0.4,
             motorStrength: 5.0,
             wheelFriction: 0.3
+        };
+        
+        // Network architecture configuration
+        this.networkConfig = {
+            preset: 'CLASSIC',
+            customLayers: [8],
+            currentArchitecture: null
         };
         
         // Parameter validation ranges
@@ -67,16 +75,8 @@ class UIControls {
             this.app.setTrainingSpeed(value);
         });
         
-        // Hidden neurons control
-        const hiddenNeuronsSlider = document.getElementById('hidden-neurons');
-        const hiddenNeuronsValue = document.getElementById('hidden-neurons-value');
-        
-        hiddenNeuronsSlider.addEventListener('input', (e) => {
-            const value = parseInt(e.target.value);
-            this.setParameter('hiddenNeurons', value);
-            hiddenNeuronsValue.textContent = value.toString();
-            this.app.updateNetworkArchitecture(value);
-        });
+        // Network configuration controls
+        this.setupNetworkConfiguration();
         
         // Learning rate control
         const learningRateSlider = document.getElementById('learning-rate');
@@ -145,6 +145,170 @@ class UIControls {
                 this.app.updateWheelFriction(value);
             });
         }
+    }
+    
+    setupNetworkConfiguration() {
+        // Initialize current architecture from preset
+        this.networkConfig.currentArchitecture = getPreset(this.networkConfig.preset);
+        
+        // Network preset selector
+        const presetSelect = document.getElementById('network-preset');
+        const presetDescription = document.getElementById('preset-description');
+        const customArchitecture = document.getElementById('custom-architecture');
+        
+        if (presetSelect) {
+            presetSelect.addEventListener('change', (e) => {
+                const presetName = e.target.value;
+                this.networkConfig.preset = presetName;
+                
+                if (presetName === 'CUSTOM') {
+                    customArchitecture.style.display = 'block';
+                    this.setupCustomArchitecture();
+                } else {
+                    customArchitecture.style.display = 'none';
+                    const preset = getPreset(presetName);
+                    this.networkConfig.currentArchitecture = preset;
+                    presetDescription.textContent = preset.description;
+                    this.updateArchitectureDisplay();
+                    this.app.updateNetworkArchitecture(preset);
+                }
+            });
+            
+            // Set initial description
+            const initialPreset = getPreset(this.networkConfig.preset);
+            presetDescription.textContent = initialPreset.description;
+            this.updateArchitectureDisplay();
+        }
+        
+        // Layer count control for custom architecture
+        const layerCountSlider = document.getElementById('layer-count');
+        const layerCountValue = document.getElementById('layer-count-value');
+        
+        if (layerCountSlider) {
+            layerCountSlider.addEventListener('input', (e) => {
+                const layerCount = parseInt(e.target.value);
+                layerCountValue.textContent = layerCount;
+                this.updateCustomLayers(layerCount);
+            });
+        }
+    }
+    
+    setupCustomArchitecture() {
+        const layerCount = parseInt(document.getElementById('layer-count').value);
+        this.updateCustomLayers(layerCount);
+    }
+    
+    updateCustomLayers(layerCount) {
+        const layerConfigs = document.getElementById('layer-configs');
+        layerConfigs.innerHTML = '';
+        
+        // Ensure we have the right number of layers
+        while (this.networkConfig.customLayers.length < layerCount) {
+            this.networkConfig.customLayers.push(8);
+        }
+        while (this.networkConfig.customLayers.length > layerCount) {
+            this.networkConfig.customLayers.pop();
+        }
+        
+        // Create layer configuration controls
+        for (let i = 0; i < layerCount; i++) {
+            const layerDiv = document.createElement('div');
+            layerDiv.className = 'layer-config';
+            
+            layerDiv.innerHTML = `
+                <label>Layer ${i + 1}:</label>
+                <input type="range" id="layer-${i}-size" min="1" max="256" step="1" value="${this.networkConfig.customLayers[i]}">
+                <span class="layer-value" id="layer-${i}-value">${this.networkConfig.customLayers[i]}</span>
+            `;
+            
+            layerConfigs.appendChild(layerDiv);
+            
+            // Add event listener for this layer
+            const slider = layerDiv.querySelector('input');
+            const valueSpan = layerDiv.querySelector('.layer-value');
+            
+            slider.addEventListener('input', (e) => {
+                const size = parseInt(e.target.value);
+                this.networkConfig.customLayers[i] = size;
+                valueSpan.textContent = size;
+                this.updateCustomArchitecture();
+            });
+        }
+        
+        this.updateCustomArchitecture();
+    }
+    
+    updateCustomArchitecture() {
+        try {
+            // Create custom architecture
+            const customArch = createCustomArchitecture({
+                name: 'Custom',
+                description: 'User-defined architecture',
+                layers: [...this.networkConfig.customLayers],
+                maxParameters: 10000, // Allow large networks for web training
+                deployment: 'web'
+            });
+            
+            this.networkConfig.currentArchitecture = customArch;
+            this.updateArchitectureDisplay();
+            this.app.updateNetworkArchitecture(customArch);
+            
+        } catch (error) {
+            console.error('Invalid custom architecture:', error);
+            this.showArchitectureError(error.message);
+        }
+    }
+    
+    updateArchitectureDisplay() {
+        const arch = this.networkConfig.currentArchitecture;
+        if (!arch) return;
+        
+        const archDisplay = document.getElementById('architecture-display');
+        const paramCount = document.getElementById('parameter-count');
+        const memoryEstimate = document.getElementById('memory-estimate');
+        
+        if (archDisplay) {
+            const layerSizes = arch.layers.join(' → ');
+            archDisplay.textContent = `Input(${arch.inputSize}) → ${layerSizes} → Output(${arch.outputSize})`;
+        }
+        
+        if (paramCount) {
+            const params = arch.getParameterCount();
+            paramCount.textContent = `Total Parameters: ${params.toLocaleString()}`;
+            paramCount.className = params > 1000 ? 'validation-warning' : '';
+        }
+        
+        if (memoryEstimate) {
+            const memoryKB = (arch.getParameterCount() * 4) / 1024; // 4 bytes per float
+            memoryEstimate.textContent = `Memory: ~${memoryKB.toFixed(1)} KB`;
+        }
+        
+        // Clear any previous errors
+        this.clearArchitectureError();
+    }
+    
+    showArchitectureError(message) {
+        const summary = document.querySelector('.architecture-summary');
+        if (summary) {
+            let errorDiv = summary.querySelector('.validation-error');
+            if (!errorDiv) {
+                errorDiv = document.createElement('div');
+                errorDiv.className = 'validation-error';
+                summary.appendChild(errorDiv);
+            }
+            errorDiv.textContent = `Error: ${message}`;
+        }
+    }
+    
+    clearArchitectureError() {
+        const errorDiv = document.querySelector('.architecture-summary .validation-error');
+        if (errorDiv) {
+            errorDiv.remove();
+        }
+    }
+    
+    getNetworkArchitecture() {
+        return this.networkConfig.currentArchitecture;
     }
     
     setupKeyboardShortcuts() {
@@ -256,8 +420,7 @@ class UIControls {
         document.getElementById('training-speed').value = this.parameters.trainingSpeed;
         document.getElementById('training-speed-value').textContent = `${this.parameters.trainingSpeed.toFixed(1)}x`;
         
-        document.getElementById('hidden-neurons').value = this.parameters.hiddenNeurons;
-        document.getElementById('hidden-neurons-value').textContent = this.parameters.hiddenNeurons.toString();
+        // Network configuration is now handled by preset system
         
         document.getElementById('learning-rate').value = this.parameters.learningRate;
         document.getElementById('learning-rate-value').textContent = this.parameters.learningRate.toFixed(4);
@@ -360,6 +523,9 @@ class TwoWheelBotRL {
         
         // User control toggle state (separate from manual mode)
         this.userControlEnabled = false;
+        
+        // Network architecture (will be set by UI)
+        this.currentNetworkArchitecture = null;
         
         // Physics simulation timing
         this.lastPhysicsUpdate = 0;
@@ -1273,12 +1439,28 @@ class TwoWheelBotRL {
         console.log(`Training speed set to ${speed}x (${this.targetPhysicsStepsPerFrame} steps/frame)`);
     }
     
-    updateNetworkArchitecture(hiddenSize) {
-        console.log(`Network architecture update requested: ${hiddenSize} hidden neurons`);
+    updateNetworkArchitecture(architecture) {
+        if (typeof architecture === 'number') {
+            // Backward compatibility - convert single hiddenSize to architecture
+            console.log(`Network architecture update requested: ${architecture} hidden neurons`);
+            this.currentNetworkArchitecture = {
+                layers: [architecture],
+                inputSize: 2,
+                outputSize: 3,
+                getParameterCount: () => (2 * architecture + architecture) + (architecture * 3 + 3)
+            };
+        } else {
+            // New architecture object
+            console.log(`Network architecture update requested: ${architecture.name} (${architecture.layers.join('→')} layers)`);
+            this.currentNetworkArchitecture = architecture;
+        }
+        
         // Note: This requires reinitializing the Q-learning network
         // For now, we'll log the request and apply it on next training start
         if (this.qlearning) {
-            this.qlearning.hyperparams.hiddenSize = hiddenSize;
+            // Update hyperparams for backward compatibility
+            this.qlearning.hyperparams.hiddenSize = this.currentNetworkArchitecture.layers[0] || 8;
+            this.qlearning.hyperparams.networkArchitecture = this.currentNetworkArchitecture;
             console.log('Network architecture will be updated on next training initialization');
         }
     }

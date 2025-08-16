@@ -8,6 +8,7 @@
 
 import { NeuralNetwork, NetworkConfig, validateArchitecture, calculateParameterCount } from './NeuralNetwork.js';
 import { CPUBackend } from './CPUBackend.js';
+import { WebGPUNeuralNetwork } from './shaders/WebGPUNeuralNetwork.js';
 
 /**
  * WebGPU feature requirements for neural network operations
@@ -338,6 +339,9 @@ export class WebGPUBackend extends NeuralNetwork {
         this.deviceManager = new WebGPUDeviceManager();
         this.isWebGPUAvailable = false;
         
+        // GPU neural network implementation
+        this.gpuNetwork = null;
+        
         // CPU fallback backend
         this.cpuBackend = new CPUBackend();
         this.usingFallback = false;
@@ -356,21 +360,65 @@ export class WebGPUBackend extends NeuralNetwork {
 
     /**
      * Create and initialize the neural network with WebGPU acceleration
-     * @param {number} inputSize - Number of input neurons (must be 2)
-     * @param {number} hiddenSize - Number of hidden neurons (4-16)
-     * @param {number} outputSize - Number of output neurons (must be 3)
+     * @param {number|Object} inputSizeOrArchitecture - Input size (2) or full architecture object
+     * @param {number} hiddenSize - Number of hidden neurons (4-16) - legacy parameter
+     * @param {number} outputSize - Number of output neurons (must be 3) - legacy parameter
      * @param {Object} options - Configuration options
      * @param {string} options.initMethod - Weight initialization method
      * @param {number} options.seed - Random seed for reproducible initialization
      * @param {boolean} options.forceCPU - Force CPU fallback for testing
      * @returns {Promise<void>} Promise that resolves when network is created
      */
-    async createNetwork(inputSize, hiddenSize, outputSize, options = {}) {
+    async createNetwork(inputSizeOrArchitecture, hiddenSize, outputSize, options = {}) {
         const startTime = performance.now();
         
         try {
+            // Handle both old single-layer and new multi-layer architecture formats
+            let architecture, inputSize, outputSize;
+            
+            if (typeof inputSizeOrArchitecture === 'object' && inputSizeOrArchitecture.layers) {
+                // New architecture object format
+                architecture = inputSizeOrArchitecture;
+                inputSize = architecture.inputSize || 2;
+                outputSize = architecture.outputSize || 3;
+                console.log(`Creating network with ${architecture.name || 'Custom'} architecture: ${architecture.layers.join('→')} layers`);
+            } else {
+                // Legacy format: (inputSize, hiddenSize, outputSize)
+                inputSize = inputSizeOrArchitecture || 2;
+                outputSize = outputSize || 3;
+                architecture = {
+                    name: 'Legacy',
+                    inputSize: inputSize,
+                    outputSize: outputSize,
+                    layers: [hiddenSize || 8],
+                    getParameterCount: function() {
+                        let total = 0;
+                        let prevSize = this.inputSize;
+                        for (const layerSize of this.layers) {
+                            total += (prevSize * layerSize) + layerSize;
+                            prevSize = layerSize;
+                        }
+                        total += (prevSize * this.outputSize) + this.outputSize;
+                        return total;
+                    }
+                };
+                console.log(`Creating network with legacy format: ${inputSize}-${hiddenSize}-${outputSize}`);
+            }
+            
             // Validate architecture constraints
-            validateArchitecture(inputSize, hiddenSize, outputSize);
+            if (architecture.layers.length === 1) {
+                // Single layer - use old validation for backward compatibility
+                validateArchitecture(inputSize, architecture.layers[0], outputSize);
+            } else {
+                // Multi-layer - validate with architecture object
+                const validation = architecture.validate ? architecture.validate() : { valid: true };
+                if (!validation.valid) {
+                    throw new Error(`Invalid architecture: ${validation.errors.join(', ')}`);
+                }
+            }
+            
+            // Store architecture for later use
+            this.currentArchitecture = architecture;
             
             console.log('Initializing WebGPU backend...');
             
@@ -387,9 +435,9 @@ export class WebGPUBackend extends NeuralNetwork {
                 console.log('WebGPU backend initialized successfully');
                 console.log('Performance estimate:', this.deviceManager.getPerformanceEstimate());
                 
-                // TODO: Initialize WebGPU-specific resources in Phase 2.2
-                // For now, use CPU backend as implementation
-                await this.cpuBackend.createNetwork(inputSize, hiddenSize, outputSize, options);
+                // Initialize WebGPU neural network with shaders
+                this.gpuNetwork = new WebGPUNeuralNetwork(this.deviceManager.getDevice());
+                await this.gpuNetwork.initialize(architecture, options);
                 
             } else {
                 // Fall back to CPU backend
@@ -398,14 +446,14 @@ export class WebGPUBackend extends NeuralNetwork {
                 this.performanceMetrics.fallbackReason = deviceInfo.fallbackReason || deviceInfo.errorMessage;
                 
                 console.log('Falling back to CPU backend:', this.performanceMetrics.fallbackReason);
-                await this.cpuBackend.createNetwork(inputSize, hiddenSize, outputSize, options);
+                await this.cpuBackend.createNetwork(architecture, options);
             }
             
             this.isInitialized = true;
             this.performanceMetrics.initializationTime = performance.now() - startTime;
             
             const backendType = this.isWebGPUAvailable ? 'WebGPU' : 'CPU (fallback)';
-            console.log(`Neural Network created with ${backendType} backend: ${inputSize}-${hiddenSize}-${outputSize}`);
+            console.log(`Neural Network created with ${backendType} backend: ${architecture.name} (${architecture.layers.join('→')} layers, ${architecture.getParameterCount()} params)`);
             
         } catch (error) {
             console.error('Failed to initialize WebGPU backend:', error);
@@ -417,7 +465,7 @@ export class WebGPUBackend extends NeuralNetwork {
                 this.usingFallback = true;
                 this.performanceMetrics.fallbackReason = error.message;
                 
-                await this.cpuBackend.createNetwork(inputSize, hiddenSize, outputSize, options);
+                await this.cpuBackend.createNetwork(architecture, options);
                 this.isInitialized = true;
             } else {
                 throw error;
@@ -430,15 +478,21 @@ export class WebGPUBackend extends NeuralNetwork {
      * @param {Float32Array} input - Input values (angle, angular velocity)
      * @returns {Float32Array} Output probabilities for actions
      */
-    forward(input) {
+    async forward(input) {
         if (!this.isInitialized) {
             throw new Error('Network not initialized. Call createNetwork() first.');
         }
         
         const startTime = performance.now();
         
-        // Use CPU backend for now (WebGPU compute shaders in Phase 2.2)
-        const result = this.cpuBackend.forward(input);
+        let result;
+        if (this.isWebGPUAvailable && this.gpuNetwork) {
+            // Use WebGPU compute shaders
+            result = await this.gpuNetwork.forward(input);
+        } else {
+            // Use CPU backend fallback
+            result = this.cpuBackend.forward(input);
+        }
         
         // Track performance
         const forwardTime = performance.now() - startTime;
@@ -457,29 +511,39 @@ export class WebGPUBackend extends NeuralNetwork {
      * @returns {number} Total parameter count
      */
     getParameterCount() {
-        if (!this.isInitialized) {
+        if (!this.isInitialized || !this.currentArchitecture) {
             return 0;
         }
-        return this.cpuBackend.getParameterCount();
+        
+        return this.currentArchitecture.getParameterCount();
     }
 
     /**
      * Get network weights for serialization/export
-     * @returns {Object} Object containing weights and biases
+     * @returns {Promise<Object>} Object containing weights and biases
      */
-    getWeights() {
+    async getWeights() {
         if (!this.isInitialized) {
             throw new Error('Network not initialized');
         }
-        return this.cpuBackend.getWeights();
+        
+        if (this.isWebGPUAvailable && this.gpuNetwork) {
+            return await this.gpuNetwork.getWeights();
+        } else {
+            return this.cpuBackend.getWeights();
+        }
     }
 
     /**
      * Set network weights from serialized data
      * @param {Object} weights - Object containing weights and biases
      */
-    setWeights(weights) {
-        return this.cpuBackend.setWeights(weights);
+    async setWeights(weights) {
+        if (this.isWebGPUAvailable && this.gpuNetwork) {
+            return await this.gpuNetwork.setWeights(weights);
+        } else {
+            return this.cpuBackend.setWeights(weights);
+        }
     }
 
     /**
@@ -487,10 +551,17 @@ export class WebGPUBackend extends NeuralNetwork {
      * @returns {Object} Architecture details with backend information
      */
     getArchitecture() {
-        const baseArch = this.cpuBackend.getArchitecture();
+        if (!this.isInitialized || !this.currentArchitecture) {
+            return {
+                backend: 'uninitialized',
+                webgpuAvailable: this.isWebGPUAvailable,
+                usingFallback: this.usingFallback
+            };
+        }
         
         return {
-            ...baseArch,
+            ...this.currentArchitecture,
+            parameterCount: this.currentArchitecture.getParameterCount(),
             backend: this.isWebGPUAvailable ? 'webgpu' : 'cpu',
             webgpuAvailable: this.isWebGPUAvailable,
             usingFallback: this.usingFallback,
@@ -526,7 +597,7 @@ export class WebGPUBackend extends NeuralNetwork {
             ? forwardTimes.reduce((a, b) => a + b) / forwardTimes.length 
             : 0;
 
-        return {
+        const baseMetrics = {
             initializationTime: this.performanceMetrics.initializationTime,
             averageForwardTime: avgForwardTime,
             totalForwardPasses: forwardTimes.length,
@@ -534,6 +605,21 @@ export class WebGPUBackend extends NeuralNetwork {
                 ? this.deviceManager.getPerformanceEstimate().estimatedSpeedup 
                 : 1.0,
             memoryUsage: this.getMemoryUsage()
+        };
+
+        // Add GPU-specific metrics if available
+        if (this.isWebGPUAvailable && this.gpuNetwork) {
+            const gpuMetrics = this.gpuNetwork.getPerformanceMetrics();
+            return {
+                ...baseMetrics,
+                gpu: gpuMetrics,
+                backend: 'webgpu'
+            };
+        }
+
+        return {
+            ...baseMetrics,
+            backend: 'cpu'
         };
     }
 
@@ -584,10 +670,9 @@ export class WebGPUBackend extends NeuralNetwork {
     clone() {
         const clone = new WebGPUBackend();
         
-        if (this.isInitialized) {
-            const arch = this.getArchitecture();
-            clone.createNetwork(arch.inputSize, arch.hiddenSize, arch.outputSize, {
-                initMethod: arch.initMethod
+        if (this.isInitialized && this.currentArchitecture) {
+            clone.createNetwork(this.currentArchitecture, {
+                initMethod: 'xavier'
             });
             clone.setWeights(this.getWeights());
         }
@@ -610,6 +695,11 @@ export class WebGPUBackend extends NeuralNetwork {
      * Clean up resources
      */
     destroy() {
+        if (this.gpuNetwork) {
+            this.gpuNetwork.destroy();
+            this.gpuNetwork = null;
+        }
+        
         if (this.cpuBackend) {
             // CPU backend doesn't have a destroy method, but we can clear references
             this.cpuBackend = null;
