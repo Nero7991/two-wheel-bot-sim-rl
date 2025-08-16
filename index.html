@@ -41,31 +41,32 @@
             flex: 1;
             display: flex;
             position: relative;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
         }
 
         #simulation-canvas {
             background-color: #0a0a0a;
             border: 1px solid #404040;
             cursor: crosshair;
-            flex: 1;
-            width: 100%;
+            width: 580px;
             height: 100%;
             display: block;
+            flex-shrink: 0;
         }
 
         #controls-panel {
             background-color: #2d2d2d;
-            width: 300px;
+            width: 350px;
             border-left: 1px solid #404040;
-            padding: 20px;
+            padding: 15px;
             overflow-y: auto;
             flex-shrink: 0;
         }
 
         #charts-panel {
             background-color: #1a1a1a;
-            width: 350px;
+            width: 340px;
             border-left: 1px solid #404040;
             overflow-y: auto;
             flex-shrink: 0;
@@ -281,11 +282,15 @@
         /* Responsive design for charts panel */
         @media (max-width: 1400px) {
             #charts-panel {
-                width: 300px;
+                width: 280px;
+            }
+            #controls-panel {
+                width: 260px;
+                padding: 12px;
             }
         }
 
-        @media (max-width: 1200px) {
+        @media (max-width: 1100px) {
             #charts-panel {
                 display: none;
             }

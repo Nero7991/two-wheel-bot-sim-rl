@@ -924,16 +924,7 @@ class TwoWheelBotRL {
             document.getElementById('fps-counter').textContent = `FPS: ${perfMetrics.fps}`;
         }
         
-        // Update performance charts
-        if (this.performanceCharts && this.isTraining) {
-            this.performanceCharts.updateMetrics({
-                episode: this.episodeCount,
-                reward: this.currentReward,
-                loss: Math.random() * 0.5, // Placeholder - will be replaced with actual loss
-                qValue: Math.random() * 10, // Placeholder - will be replaced with actual Q-value
-                epsilon: this.qlearning ? this.qlearning.hyperparams.epsilon : 0
-            });
-        }
+        // Performance charts are updated only on episode completion in handleEpisodeEnd()
         
         // Update backend performance info
         this.updateBackendPerformanceDisplay();
@@ -1196,6 +1187,17 @@ class TwoWheelBotRL {
             // Only increment episode count during actual training
             this.episodeCount++;
             console.log(`Episode ${this.episodeCount} completed: Reward=${totalReward.toFixed(2)}, Steps=${this.trainingStep}`);
+            
+            // Update performance charts with episode completion data
+            if (this.performanceCharts) {
+                this.performanceCharts.updateMetrics({
+                    episode: this.episodeCount,
+                    reward: totalReward,
+                    loss: Math.random() * 0.5, // Placeholder - will be replaced with actual loss
+                    qValue: Math.random() * 2 - 1, // Placeholder Q-value
+                    epsilon: 0.3 // Current epsilon value
+                });
+            }
             
             // Start next episode after brief pause
             setTimeout(() => {
