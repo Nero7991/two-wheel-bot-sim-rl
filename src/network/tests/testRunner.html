@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Network Tests</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 20px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-output {
+            background-color: #2d2d30;
+            border: 1px solid #3e3e42;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            background-color: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 0 10px;
+        }
+        button:hover {
+            background-color: #1177bb;
+        }
+        button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+        .summary {
+            background-color: #2d3142;
+            border-left: 4px solid #4CAF50;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .summary.failed {
+            border-left-color: #f44336;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Two-Wheel Robot Neural Network Tests</h1>
+            <p>Comprehensive testing for CPU-based neural network implementation</p>
+        </div>
+
+        <div class="controls">
+            <button id="runTests" onclick="runAllTests()">Run All Tests</button>
+            <button id="runPerformance" onclick="runPerformanceTests()">Performance Test</button>
+            <button id="clearOutput" onclick="clearOutput()">Clear Output</button>
+        </div>
+
+        <div id="summary" class="summary" style="display: none;">
+            <h3>Test Results Summary</h3>
+            <div id="summaryContent"></div>
+        </div>
+
+        <div id="testOutput" class="test-output">
+            Click "Run All Tests" to start testing the neural network implementation...
+        </div>
+    </div>
+
+    <script type="module">
+        import { runTests } from './NetworkTests.js';
+        import { CPUBackend } from '../CPUBackend.js';
+
+        let isRunning = false;
+
+        // Make functions available globally
+        window.runAllTests = async function() {
+            if (isRunning) return;
+            
+            isRunning = true;
+            document.getElementById('runTests').disabled = true;
+            document.getElementById('runPerformance').disabled = true;
+            
+            const output = document.getElementById('testOutput');
+            const summary = document.getElementById('summary');
+            const summaryContent = document.getElementById('summaryContent');
+            
+            output.textContent = 'Running tests...\n\n';
+            
+            // Capture console output
+            const originalLog = console.log;
+            console.log = function(...args) {
+                output.textContent += args.join(' ') + '\n';
+                output.scrollTop = output.scrollHeight;
+                originalLog.apply(console, args);
+            };
+            
+            try {
+                const results = await runTests();
+                
+                // Show summary
+                summary.style.display = 'block';
+                summary.className = results.passed === results.total ? 'summary' : 'summary failed';
+                
+                summaryContent.innerHTML = `
+                    <strong>Total Tests:</strong> ${results.total}<br>
+                    <strong class="success">Passed:</strong> ${results.passed}<br>
+                    <strong class="error">Failed:</strong> ${results.failed}<br>
+                    <strong>Success Rate:</strong> ${(results.successRate * 100).toFixed(1)}%
+                `;
+                
+            } catch (error) {
+                output.textContent += `\nError running tests: ${error.message}\n`;
+                summary.style.display = 'block';
+                summary.className = 'summary failed';
+                summaryContent.innerHTML = `<strong class="error">Test execution failed:</strong> ${error.message}`;
+            } finally {
+                console.log = originalLog;
+                isRunning = false;
+                document.getElementById('runTests').disabled = false;
+                document.getElementById('runPerformance').disabled = false;
+            }
+        };
+
+        window.runPerformanceTests = async function() {
+            if (isRunning) return;
+            
+            isRunning = true;
+            document.getElementById('runTests').disabled = true;
+            document.getElementById('runPerformance').disabled = true;
+            
+            const output = document.getElementById('testOutput');
+            output.textContent = 'Running performance tests...\n\n';
+            
+            try {
+                const network = new CPUBackend();
+                await network.createNetwork(2, 8, 3);
+                
+                output.textContent += 'Network created successfully\n';
+                output.textContent += `Architecture: ${network.getArchitecture().inputSize}-${network.getArchitecture().hiddenSize}-${network.getArchitecture().outputSize}\n`;
+                output.textContent += `Parameters: ${network.getParameterCount()}\n\n`;
+                
+                // Memory usage
+                const memory = network.getMemoryUsage();
+                output.textContent += `Memory Usage:\n`;
+                output.textContent += `  Total: ${memory.totalKB.toFixed(2)} KB\n`;
+                output.textContent += `  Parameters: ${memory.parameterKB.toFixed(2)} KB\n\n`;
+                
+                // Performance benchmarks
+                const tests = [100, 1000, 10000];
+                
+                for (const iterations of tests) {
+                    output.textContent += `Benchmarking ${iterations} iterations...\n`;
+                    const benchmark = network.benchmark(iterations);
+                    
+                    output.textContent += `  Average time: ${benchmark.averageTime.toFixed(3)} ms\n`;
+                    output.textContent += `  Total time: ${benchmark.totalTime.toFixed(1)} ms\n`;
+                    output.textContent += `  Operations/sec: ${(1000 / benchmark.averageTime).toFixed(0)}\n\n`;
+                }
+                
+                // Test different network sizes
+                output.textContent += 'Testing different network sizes:\n';
+                
+                const sizes = [4, 8, 12, 16];
+                for (const hiddenSize of sizes) {
+                    const testNet = new CPUBackend();
+                    await testNet.createNetwork(2, hiddenSize, 3);
+                    
+                    const bench = testNet.benchmark(1000);
+                    const params = testNet.getParameterCount();
+                    
+                    output.textContent += `  ${hiddenSize} hidden neurons: ${bench.averageTime.toFixed(3)} ms/inference, ${params} params\n`;
+                }
+                
+                output.textContent += '\nPerformance tests completed!\n';
+                
+            } catch (error) {
+                output.textContent += `\nError in performance tests: ${error.message}\n`;
+            } finally {
+                isRunning = false;
+                document.getElementById('runTests').disabled = false;
+                document.getElementById('runPerformance').disabled = false;
+            }
+        };
+
+        window.clearOutput = function() {
+            document.getElementById('testOutput').textContent = '';
+            document.getElementById('summary').style.display = 'none';
+        };
+    </script>
+</body>
+</html>
