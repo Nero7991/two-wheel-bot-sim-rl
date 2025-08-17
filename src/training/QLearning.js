@@ -35,7 +35,7 @@ export class Hyperparameters {
         this.batchSize = this._validateParameter(options.batchSize, 128, 16, 256, 'batchSize');
         this.targetUpdateFreq = this._validateParameter(options.targetUpdateFreq, 100, 10, 1000, 'targetUpdateFreq');
         this.maxEpisodes = this._validateParameter(options.maxEpisodes, 1000, 10, 10000, 'maxEpisodes');
-        this.maxStepsPerEpisode = this._validateParameter(options.maxStepsPerEpisode, 500, 50, 2000, 'maxStepsPerEpisode');
+        this.maxStepsPerEpisode = this._validateParameter(options.maxStepsPerEpisode, 8000, 50, 50000, 'maxStepsPerEpisode');
         
         // Convergence detection
         this.convergenceWindow = this._validateParameter(options.convergenceWindow, 100, 10, 500, 'convergenceWindow');
@@ -252,6 +252,10 @@ export class QLearning {
         this.stepCount = 0;
         this.globalStepCount = 0; // Global step counter for linear epsilon decay
         this.lastTargetUpdate = 0;
+        
+        // Training completion tracking
+        this.consecutiveMaxEpisodes = 0; // Track consecutive episodes that reach max steps
+        this.trainingCompleted = false;
         
         // Action space (discrete actions for continuous control)
         this.actions = [-1.0, 0.0, 1.0]; // Left motor, brake, right motor
@@ -585,6 +589,22 @@ export class QLearning {
         
         const avgLoss = lossCount > 0 ? totalLoss / lossCount : 0;
         
+        // Check if episode reached maximum steps (training completion detection)
+        if (stepCount >= this.hyperparams.maxStepsPerEpisode) {
+            this.consecutiveMaxEpisodes++;
+            if (verbose) {
+                console.log(`🎯 Episode ${this.episode} reached max steps (${stepCount}). Consecutive: ${this.consecutiveMaxEpisodes}/20`);
+            }
+        } else {
+            this.consecutiveMaxEpisodes = 0; // Reset counter if episode didn't reach max steps
+        }
+        
+        // Check for training completion (20 consecutive episodes reaching max steps)
+        if (this.consecutiveMaxEpisodes >= 20 && !this.trainingCompleted) {
+            this.trainingCompleted = true;
+            console.log(`🏆 TRAINING COMPLETED! Model consistently balanced for 20 consecutive episodes of ${this.hyperparams.maxStepsPerEpisode} steps.`);
+        }
+        
         // Record metrics
         this.metrics.addEpisode(totalReward, stepCount, avgLoss, this.hyperparams.epsilon);
         
@@ -597,7 +617,9 @@ export class QLearning {
             reward: totalReward,
             steps: stepCount,
             loss: avgLoss,
-            epsilon: this.hyperparams.epsilon
+            epsilon: this.hyperparams.epsilon,
+            consecutiveMaxEpisodes: this.consecutiveMaxEpisodes,
+            trainingCompleted: this.trainingCompleted
         };
     }
     
@@ -804,6 +826,8 @@ export class QLearning {
         this.episode = 0;
         this.stepCount = 0;
         this.lastTargetUpdate = 0;
+        this.consecutiveMaxEpisodes = 0;
+        this.trainingCompleted = false;
         
         if (this.isInitialized) {
             this.qNetwork.resetWeights();
@@ -821,7 +845,9 @@ export class QLearning {
             replayBufferSize: this.replayBuffer.size(),
             stepCount: this.stepCount,
             lastTargetUpdate: this.lastTargetUpdate,
-            networkParameters: this.isInitialized ? this.qNetwork.getParameterCount() : 0
+            networkParameters: this.isInitialized ? this.qNetwork.getParameterCount() : 0,
+            consecutiveMaxEpisodes: this.consecutiveMaxEpisodes,
+            trainingCompleted: this.trainingCompleted
         };
     }
     

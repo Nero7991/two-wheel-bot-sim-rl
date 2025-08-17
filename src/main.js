@@ -987,15 +987,16 @@ class TwoWheelBotRL {
                     this.frameTimeHistory.shift();
                 }
                 
-                // Auto-adjust training speed if performance is poor
+                // Auto-adjust training speed if performance is extremely poor (disabled for manual speed control)
                 if (this.frameTimeHistory.length === this.performanceCheckInterval) {
                     const avgFrameTime = this.frameTimeHistory.reduce((a, b) => a + b) / this.frameTimeHistory.length;
                     const targetFrameTime = 16.67; // 60 FPS target
                     
-                    if (avgFrameTime > targetFrameTime * 1.5 && this.targetPhysicsStepsPerFrame > 1) {
-                        // Performance is poor, reduce training speed
-                        this.setTrainingSpeed(Math.max(1.0, this.trainingSpeed * 0.8));
-                        console.warn(`Performance degraded (${avgFrameTime.toFixed(1)}ms/frame), reducing training speed to ${this.trainingSpeed.toFixed(1)}x`);
+                    // Only auto-adjust if frame time is extremely poor (>100ms = <10 FPS) and speed is very high
+                    // This prevents unwanted auto-reduction during intentional high-speed training
+                    if (avgFrameTime > 100 && this.targetPhysicsStepsPerFrame > 50) {
+                        this.setTrainingSpeed(Math.max(10.0, this.trainingSpeed * 0.9));
+                        console.warn(`Extremely poor performance (${avgFrameTime.toFixed(1)}ms/frame), reducing training speed to ${this.trainingSpeed.toFixed(1)}x`);
                     }
                 }
             }
@@ -1141,6 +1142,39 @@ class TwoWheelBotRL {
             // Update training step counter
             if (this.isTraining && !this.isPaused) {
                 this.trainingStep++;
+                
+                // Check for episode termination based on step count (8000 steps max)
+                if (this.trainingStep >= 8000 && !this.episodeEnded && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+                    console.log(`Episode terminated at step ${this.trainingStep} (reached max steps)`);
+                    this.episodeEnded = true;
+                    // Create a synthetic "done" result to trigger episode end
+                    const syntheticResult = {
+                        state: this.robot.getState(),
+                        reward: 1.0, // Positive reward for reaching max steps
+                        done: true
+                    };
+                    this.handleEpisodeEnd(syntheticResult);
+                    return;
+                }
+                
+                // Check for episode termination based on position (robot moved off canvas)
+                if (!this.episodeEnded && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+                    const robotState = this.robot.getState();
+                    const bounds = this.renderer ? this.renderer.getPhysicsBounds() : null;
+                    
+                    if (bounds && (robotState.position < bounds.minX || robotState.position > bounds.maxX)) {
+                        console.log(`Episode terminated at step ${this.trainingStep} (robot moved off canvas: position=${robotState.position.toFixed(2)}m, bounds=[${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}])`);
+                        this.episodeEnded = true;
+                        // Create a synthetic "done" result with penalty for going off canvas
+                        const syntheticResult = {
+                            state: this.robot.getState(),
+                            reward: -1.0, // Penalty for moving off canvas
+                            done: true
+                        };
+                        this.handleEpisodeEnd(syntheticResult);
+                        return;
+                    }
+                }
             }
         }
     }
@@ -1176,9 +1210,10 @@ class TwoWheelBotRL {
         document.getElementById('best-score').textContent = `Best Score: ${this.bestScore.toFixed(1)}`;
         document.getElementById('current-reward').textContent = `Current Reward: ${this.currentReward.toFixed(1)}`;
         
-        // Update epsilon display
+        // Update Q-learning metrics display
         if (this.qlearning) {
             document.getElementById('epsilon-display').textContent = `Epsilon: ${this.qlearning.hyperparams.epsilon.toFixed(3)}`;
+            document.getElementById('consecutive-episodes').textContent = `Consecutive Max Episodes: ${this.qlearning.consecutiveMaxEpisodes}/20`;
         }
         
         // Update training loss display
@@ -1360,7 +1395,7 @@ class TwoWheelBotRL {
             epsilon: this.uiControls.getParameter('epsilon'),
             epsilonDecay: 0.995,
             maxEpisodes: 1000,
-            maxStepsPerEpisode: 1000,
+            maxStepsPerEpisode: 8000,
             hiddenSize: this.uiControls.getParameter('hiddenNeurons')
         } : {
             learningRate: 0.001,  // Increased now that reward timing is fixed
@@ -1370,7 +1405,7 @@ class TwoWheelBotRL {
             batchSize: 8,         // Larger batch for stability
             targetUpdateFreq: 100, // Standard update frequency
             maxEpisodes: 1000,
-            maxStepsPerEpisode: 1000,
+            maxStepsPerEpisode: 8000,
             hiddenSize: 8
         };
         
@@ -1516,6 +1551,21 @@ class TwoWheelBotRL {
             // Only increment episode count during actual training
             this.episodeCount++;
             console.log(`Episode ${this.episodeCount} completed: Reward=${totalReward.toFixed(2)}, Steps=${this.trainingStep}`);
+            
+            // Check for training completion before auto-pause
+            if (this.qlearning && this.qlearning.trainingCompleted) {
+                this.pauseTraining();
+                console.log(`🏆 Training automatically completed! Model has consistently balanced for 20 consecutive episodes.`);
+                alert(`🏆 Training Successfully Completed!\n\nYour model has consistently balanced for 20 consecutive episodes of 8,000 steps each.\n\nThe robot is now fully trained and ready for deployment!`);
+                return; // Exit early to prevent auto-pause at 10k episodes
+            }
+            
+            // Auto-pause training at 10,000 episodes to prevent runaway sessions (if not already completed)
+            if (this.episodeCount >= 10000) {
+                this.pauseTraining();
+                console.log(`🛑 Training auto-paused at ${this.episodeCount} episodes to prevent runaway session`);
+                alert(`Training automatically paused at ${this.episodeCount} episodes.\n\nThis prevents runaway training sessions. You can resume if needed.`);
+            }
             
             // Update performance charts with episode completion data
             if (this.performanceCharts && this.qlearning) {

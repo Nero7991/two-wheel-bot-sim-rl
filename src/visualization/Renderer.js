@@ -20,9 +20,10 @@ export class CoordinateTransform {
         this.canvasHeight = canvasHeight;
         
         // Physics coordinate system (meters)
-        this.physicsScale = 100; // pixels per meter
+        this.physicsScale = 400; // pixels per meter
         this.centerX = canvasWidth / 2;
         this.centerY = canvasHeight * 0.7; // Ground line at 70% down
+        this.zoomLevel = 1.0; // Zoom level multiplier
         
         this.minX = -canvasWidth / (2 * this.physicsScale);
         this.maxX = canvasWidth / (2 * this.physicsScale);
@@ -38,8 +39,8 @@ export class CoordinateTransform {
      */
     physicsToScreen(x, y) {
         return {
-            x: this.centerX + x * this.physicsScale,
-            y: this.centerY - y * this.physicsScale // Flip Y axis
+            x: this.centerX + x * this.physicsScale * this.zoomLevel,
+            y: this.centerY - y * this.physicsScale * this.zoomLevel // Flip Y axis
         };
     }
     
@@ -51,8 +52,8 @@ export class CoordinateTransform {
      */
     screenToPhysics(screenX, screenY) {
         return {
-            x: (screenX - this.centerX) / this.physicsScale,
-            y: (this.centerY - screenY) / this.physicsScale
+            x: (screenX - this.centerX) / (this.physicsScale * this.zoomLevel),
+            y: (this.centerY - screenY) / (this.physicsScale * this.zoomLevel)
         };
     }
     
@@ -79,7 +80,20 @@ export class CoordinateTransform {
      * @returns {number} Length in pixels
      */
     scaleLength(length) {
-        return length * this.physicsScale;
+        return length * this.physicsScale * this.zoomLevel;
+    }
+    
+    /**
+     * Get physics coordinate bounds
+     * @returns {Object} {minX, maxX, minY, maxY} physics bounds in meters
+     */
+    getPhysicsBounds() {
+        return {
+            minX: this.minX,
+            maxX: this.maxX,
+            minY: this.minY,
+            maxY: this.maxY
+        };
     }
 }
 
@@ -256,6 +270,14 @@ export class Renderer {
     }
     
     /**
+     * Get physics coordinate bounds (for position-based episode termination)
+     * @returns {Object} {minX, maxX, minY, maxY} physics bounds in meters
+     */
+    getPhysicsBounds() {
+        return this.transform.getPhysicsBounds();
+    }
+    
+    /**
      * Update robot state for visualization
      * @param {Object} state - Robot state from physics simulation
      * @param {Object} config - Robot configuration
@@ -265,6 +287,7 @@ export class Renderer {
         this.robotState = state;
         this.robotConfig = config;
         this.motorTorque = motorTorque;
+        console.log('Robot updated:', state, config);
     }
     
     /**
@@ -288,6 +311,14 @@ export class Renderer {
         // Draw robot if state is available
         if (this.robotState && this.robotConfig) {
             this.drawRobot();
+        } else {
+            // Debug: Show why robot is not being drawn
+            if (!this.robotState) {
+                console.log('Robot not drawn: robotState is null');
+            }
+            if (!this.robotConfig) {
+                console.log('Robot not drawn: robotConfig is null');
+            }
         }
         
         // Draw UI overlays
@@ -348,20 +379,94 @@ export class Renderer {
     }
     
     /**
-     * Draw ground reference line
+     * Draw realistic ground surface
      */
     drawGround() {
-        this.ctx.strokeStyle = this.config.textColor;
-        this.ctx.lineWidth = 2;
-        this.ctx.globalAlpha = 0.8;
-        
         const groundY = this.transform.centerY;
+        
+        // Ground surface - more visible with texture pattern
+        this.ctx.fillStyle = '#2a2a2a'; // Dark gray surface
+        this.ctx.fillRect(0, groundY, this.canvas.width, this.canvas.height - groundY);
+        
+        // Add a textured pattern to make rolling more visible
+        // Draw repeated chevron/arrow pattern on the ground
+        this.ctx.strokeStyle = '#404040';
+        this.ctx.lineWidth = 2;
+        this.ctx.lineCap = 'round';
+        
+        const patternSpacing = 60; // Distance between pattern elements
+        const patternHeight = 15;  // Height of chevron pattern
+        
+        // Calculate pattern offset based on camera/view position
+        const startX = -patternSpacing;
+        const endX = this.canvas.width + patternSpacing;
+        
+        for (let x = startX; x < endX; x += patternSpacing) {
+            // Draw chevron/arrow pattern pointing right
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, groundY + 5);
+            this.ctx.lineTo(x + patternHeight, groundY + 5 + patternHeight/2);
+            this.ctx.lineTo(x, groundY + 5 + patternHeight);
+            this.ctx.stroke();
+            
+            // Add small tick marks for finer measurement
+            for (let i = 1; i < 4; i++) {
+                const tickX = x + (patternSpacing * i / 4);
+                this.ctx.beginPath();
+                this.ctx.moveTo(tickX, groundY + 2);
+                this.ctx.lineTo(tickX, groundY + 8);
+                this.ctx.stroke();
+            }
+        }
+        
+        // Ground line - top edge (more prominent)
+        this.ctx.strokeStyle = '#606060';
+        this.ctx.lineWidth = 3;
         this.ctx.beginPath();
         this.ctx.moveTo(0, groundY);
         this.ctx.lineTo(this.canvas.width, groundY);
         this.ctx.stroke();
         
-        this.ctx.globalAlpha = 1.0;
+        // Add subtle grid lines on ground for distance reference
+        this.ctx.strokeStyle = 'rgba(64, 64, 64, 0.5)';
+        this.ctx.lineWidth = 1;
+        const wheelCircumference = 2 * Math.PI * (this.robotConfig?.wheelRadius || 0.12);
+        const circumferencePixels = this.transform.scaleLength(wheelCircumference);
+        
+        // Draw lines at wheel circumference intervals
+        const centerX = this.transform.centerX;
+        const robotPos = this.robotState?.position || 0;
+        const robotScreenX = this.transform.physicsToScreen(robotPos, 0).x;
+        
+        // Calculate offset to align with wheel position
+        const offset = robotScreenX % circumferencePixels;
+        
+        for (let x = offset; x < this.canvas.width; x += circumferencePixels) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, groundY);
+            this.ctx.lineTo(x, groundY + 30);
+            this.ctx.stroke();
+        }
+        
+        for (let x = offset - circumferencePixels; x >= 0; x -= circumferencePixels) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, groundY);
+            this.ctx.lineTo(x, groundY + 30);
+            this.ctx.stroke();
+        }
+        
+        // Draw wheel contact point marker (optional debug visualization)
+        if (this.robotState && this.config.showDebugInfo) {
+            const contactX = this.transform.physicsToScreen(this.robotState.position, 0).x;
+            const contactY = this.transform.centerY;
+            
+            this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+            this.ctx.lineWidth = 1;
+            this.ctx.beginPath();
+            this.ctx.moveTo(contactX - 10, contactY);
+            this.ctx.lineTo(contactX + 10, contactY);
+            this.ctx.stroke();
+        }
     }
     
     /**
@@ -392,101 +497,169 @@ export class Renderer {
         const { angle, position } = this.robotState;
         const { centerOfMassHeight } = this.robotConfig;
         
-        // Calculate robot position on screen
-        const basePos = this.transform.physicsToScreen(position, 0);
-        const topPos = this.transform.physicsToScreen(
+        // Debug: Log that we're drawing the robot
+        console.log('Drawing robot at position:', position, 'angle:', angle);
+        
+        // FIXED: Wheels sit on ground (center is above ground by radius)
+        // Body extends upward from wheel center
+        const wheelRadius = this.robotConfig?.wheelRadius || 0.12; // Use actual radius from config
+        const wheelPos = this.transform.physicsToScreen(position, wheelRadius);
+        const bodyTopPos = this.transform.physicsToScreen(
             position + Math.sin(angle) * centerOfMassHeight,
-            Math.cos(angle) * centerOfMassHeight
+            wheelRadius + Math.cos(angle) * centerOfMassHeight
         );
         
-        // Draw robot body (pendulum)
-        this.drawRobotBody(basePos, topPos);
+        // Draw robot body (pendulum extending upward from wheels)
+        this.drawRobotBody(wheelPos, bodyTopPos);
         
-        // Draw wheels
-        this.drawWheels(basePos);
+        // Draw wheels at ground level
+        this.drawWheels(wheelPos);
         
         // Draw motor torque indicators
-        this.drawTorqueIndicators(basePos);
+        this.drawTorqueIndicators(wheelPos);
         
         // Draw angle indicator
-        this.drawAngleIndicator(basePos, angle);
+        this.drawAngleIndicator(wheelPos, angle);
     }
     
     /**
-     * Draw robot body as a pendulum
-     * @param {Object} basePos - Base position {x, y}
-     * @param {Object} topPos - Top position {x, y}
+     * Draw robot body (side view - inverted pendulum balancing robot)
+     * @param {Object} wheelPos - Wheel position at ground level {x, y}
+     * @param {Object} topPos - Top position of pendulum {x, y}
      */
-    drawRobotBody(basePos, topPos) {
-        // Main body line
-        this.ctx.strokeStyle = this.config.robotColor;
-        this.ctx.lineWidth = 6;
+    drawRobotBody(wheelPos, topPos) {
+        const bodyWidth = this.transform.scaleLength(0.24); // Robot body width (increased)
+        const bodyHeight = Math.sqrt(Math.pow(topPos.x - wheelPos.x, 2) + Math.pow(topPos.y - wheelPos.y, 2));
+        const angle = Math.atan2(topPos.x - wheelPos.x, wheelPos.y - topPos.y);
+        
+        // Main robot body - rectangular chassis extending upward from wheels
+        this.ctx.save();
+        this.ctx.translate(wheelPos.x, wheelPos.y);
+        this.ctx.rotate(angle);
+        
+        // Robot body - main chassis (extends upward from wheel position)
+        this.ctx.fillStyle = '#2a4d3a'; // Dark green
+        this.ctx.fillRect(-bodyWidth/2, -bodyHeight, bodyWidth, bodyHeight * 0.9);
+        
+        // Robot body outline
+        this.ctx.strokeStyle = '#1a3d2a';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(-bodyWidth/2, -bodyHeight, bodyWidth, bodyHeight * 0.9);
+        
+        // Center of mass indicator - bright marker at top of pendulum
+        this.ctx.fillStyle = '#ff4444';
         this.ctx.beginPath();
-        this.ctx.moveTo(basePos.x, basePos.y);
-        this.ctx.lineTo(topPos.x, topPos.y);
+        this.ctx.arc(0, -bodyHeight * 0.9, 15, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.restore();
+        
+        // Axle connection - small cylinder connecting to wheel
+        this.ctx.fillStyle = '#606060';
+        this.ctx.beginPath();
+        this.ctx.arc(wheelPos.x, wheelPos.y, 4, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+    
+    /**
+     * Draw robot wheel (side view - single wheel visible)
+     * @param {Object} wheelPos - Wheel position at ground level {x, y}
+     */
+    drawWheels(wheelPos) {
+        // Use actual wheel radius from physics configuration
+        const physicsWheelRadius = this.robotConfig?.wheelRadius || 0.12;
+        const wheelRadius = this.transform.scaleLength(physicsWheelRadius);
+        
+        // Main wheel body - dark gray with metallic look
+        this.ctx.fillStyle = '#404040';
+        this.ctx.beginPath();
+        this.ctx.arc(wheelPos.x, wheelPos.y, wheelRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        // Wheel rim - lighter gray
+        this.ctx.strokeStyle = '#606060';
+        this.ctx.lineWidth = 3;
+        this.ctx.beginPath();
+        this.ctx.arc(wheelPos.x, wheelPos.y, wheelRadius, 0, Math.PI * 2);
         this.ctx.stroke();
         
-        // Robot center of mass
-        this.ctx.fillStyle = this.config.robotColor;
+        // Tire tread - black outer ring
+        this.ctx.strokeStyle = '#202020';
+        this.ctx.lineWidth = 6;
         this.ctx.beginPath();
-        this.ctx.arc(topPos.x, topPos.y, 8, 0, Math.PI * 2);
+        this.ctx.arc(wheelPos.x, wheelPos.y, wheelRadius - 2, 0, Math.PI * 2);
+        this.ctx.stroke();
+        
+        // Wheel hub - central circle
+        this.ctx.fillStyle = '#707070';
+        this.ctx.beginPath();
+        this.ctx.arc(wheelPos.x, wheelPos.y, wheelRadius * 0.3, 0, Math.PI * 2);
         this.ctx.fill();
         
-        // Base connection point
-        this.ctx.fillStyle = this.config.wheelColor;
-        this.ctx.beginPath();
-        this.ctx.arc(basePos.x, basePos.y, 6, 0, Math.PI * 2);
-        this.ctx.fill();
-    }
-    
-    /**
-     * Draw robot wheels
-     * @param {Object} basePos - Base position {x, y}
-     */
-    drawWheels(basePos) {
-        const wheelRadius = this.transform.scaleLength(0.05); // 5cm wheel radius
-        const wheelSpacing = this.transform.scaleLength(0.15); // 15cm between wheels
+        // Rotating spokes for motion indication
+        // Use actual wheel angle from physics for correct visual rotation
+        // When robot moves right (positive velocity), wheel rotates clockwise
+        // When robot moves left (negative velocity), wheel rotates counter-clockwise  
+        const wheelRotation = (this.robotState.wheelAngle || 0);
+        const spokeAngle = wheelRotation;
         
-        // Left wheel
-        this.ctx.fillStyle = this.config.wheelColor;
-        this.ctx.beginPath();
-        this.ctx.arc(basePos.x - wheelSpacing/2, basePos.y, wheelRadius, 0, Math.PI * 2);
-        this.ctx.fill();
-        
-        // Right wheel
-        this.ctx.beginPath();
-        this.ctx.arc(basePos.x + wheelSpacing/2, basePos.y, wheelRadius, 0, Math.PI * 2);
-        this.ctx.fill();
-        
-        // Wheel spokes for rotation indication
-        this.ctx.strokeStyle = this.config.backgroundColor;
+        this.ctx.strokeStyle = '#808080';
         this.ctx.lineWidth = 2;
+        this.ctx.lineCap = 'round';
         
-        const time = performance.now() * 0.001;
-        for (let i = 0; i < 2; i++) {
-            const wheelX = basePos.x + (i === 0 ? -wheelSpacing/2 : wheelSpacing/2);
-            const spokeAngle = time * 2 + i * Math.PI;
+        // Draw 4 spokes
+        for (let i = 0; i < 4; i++) {
+            const angle = spokeAngle + (i * Math.PI / 2);
+            const innerRadius = wheelRadius * 0.4;
+            const outerRadius = wheelRadius * 0.8;
             
             this.ctx.beginPath();
-            this.ctx.moveTo(wheelX, basePos.y);
+            this.ctx.moveTo(
+                wheelPos.x + Math.cos(angle) * innerRadius,
+                wheelPos.y + Math.sin(angle) * innerRadius
+            );
             this.ctx.lineTo(
-                wheelX + Math.cos(spokeAngle) * wheelRadius * 0.7,
-                basePos.y + Math.sin(spokeAngle) * wheelRadius * 0.7
+                wheelPos.x + Math.cos(angle) * outerRadius,
+                wheelPos.y + Math.sin(angle) * outerRadius
             );
             this.ctx.stroke();
         }
+        
+        // Add a reference mark on the wheel to make rotation more obvious
+        // Draw a colored dot on the wheel edge
+        const markerAngle = spokeAngle;
+        const markerRadius = wheelRadius * 0.9;
+        this.ctx.fillStyle = '#ff4444'; // Red marker
+        this.ctx.beginPath();
+        this.ctx.arc(
+            wheelPos.x + Math.cos(markerAngle) * markerRadius,
+            wheelPos.y + Math.sin(markerAngle) * markerRadius,
+            4, 0, Math.PI * 2
+        );
+        this.ctx.fill();
+        
+        // Add a secondary marker 180 degrees opposite for better visual feedback
+        const oppositeMarkerAngle = spokeAngle + Math.PI;
+        this.ctx.fillStyle = '#4444ff'; // Blue marker
+        this.ctx.beginPath();
+        this.ctx.arc(
+            wheelPos.x + Math.cos(oppositeMarkerAngle) * markerRadius,
+            wheelPos.y + Math.sin(oppositeMarkerAngle) * markerRadius,
+            3, 0, Math.PI * 2
+        );
+        this.ctx.fill();
     }
     
     /**
      * Draw motor torque indicators
-     * @param {Object} basePos - Base position {x, y}
+     * @param {Object} wheelPos - Wheel position at ground level {x, y}
      */
-    drawTorqueIndicators(basePos) {
+    drawTorqueIndicators(wheelPos) {
         if (Math.abs(this.motorTorque) < 0.1) return; // Don't show for very small torques
         
         const maxTorque = this.robotConfig?.motorStrength || 5.0;
         const torqueRatio = Math.abs(this.motorTorque) / maxTorque;
-        const indicatorLength = torqueRatio * 40;
+        const indicatorLength = torqueRatio * 80;
         
         // Color based on torque direction and magnitude
         const intensity = Math.min(1.0, torqueRatio);
@@ -500,9 +673,9 @@ export class Renderer {
         this.ctx.lineCap = 'round';
         
         // Draw torque arrow
-        const arrowY = basePos.y - 30;
-        const arrowStartX = basePos.x - indicatorLength/2;
-        const arrowEndX = basePos.x + indicatorLength/2;
+        const arrowY = wheelPos.y - 30;
+        const arrowStartX = wheelPos.x - indicatorLength/2;
+        const arrowEndX = wheelPos.x + indicatorLength/2;
         
         this.ctx.beginPath();
         this.ctx.moveTo(arrowStartX, arrowY);
@@ -532,11 +705,11 @@ export class Renderer {
     
     /**
      * Draw angle indicator arc
-     * @param {Object} basePos - Base position {x, y}
+     * @param {Object} wheelPos - Wheel position at ground level {x, y}
      * @param {number} angle - Current angle in radians
      */
-    drawAngleIndicator(basePos, angle) {
-        const arcRadius = 25;
+    drawAngleIndicator(wheelPos, angle) {
+        const arcRadius = 50;
         
         this.ctx.strokeStyle = this.config.robotColor;
         this.ctx.lineWidth = 2;
@@ -544,7 +717,7 @@ export class Renderer {
         
         // Draw angle arc
         this.ctx.beginPath();
-        this.ctx.arc(basePos.x, basePos.y, arcRadius, -Math.PI/2, -Math.PI/2 + angle, angle < 0);
+        this.ctx.arc(wheelPos.x, wheelPos.y, arcRadius, -Math.PI/2, -Math.PI/2 + angle, angle < 0);
         this.ctx.stroke();
         
         this.ctx.globalAlpha = 1.0;
@@ -576,7 +749,7 @@ export class Renderer {
         const { angle, angularVelocity, position, velocity } = this.robotState;
         
         this.ctx.fillStyle = this.config.textColor;
-        this.ctx.font = '14px monospace';
+        this.ctx.font = '18px monospace';
         this.ctx.textAlign = 'left';
         
         const infoX = 20;
@@ -613,7 +786,7 @@ export class Renderer {
         const metrics = this.trainingMetrics;
         
         this.ctx.fillStyle = this.config.textColor;
-        this.ctx.font = '14px monospace';
+        this.ctx.font = '18px monospace';
         this.ctx.textAlign = 'right';
         
         const infoX = this.canvas.width - 20;
@@ -653,7 +826,7 @@ export class Renderer {
         const perfMetrics = this.performance.getMetrics();
         
         this.ctx.fillStyle = this.config.textColor;
-        this.ctx.font = '12px monospace';
+        this.ctx.font = '16px monospace';
         this.ctx.textAlign = 'left';
         
         const infoX = 20;
@@ -711,6 +884,35 @@ export class Renderer {
             hasRobotState: !!this.robotState,
             config: this.config
         };
+    }
+    
+    /**
+     * Zoom in by 0.1 (clamped to max 3.0)
+     */
+    zoomIn() {
+        this.transform.zoomLevel = Math.min(3.0, this.transform.zoomLevel + 0.1);
+    }
+    
+    /**
+     * Zoom out by 0.1 (clamped to min 0.5)
+     */
+    zoomOut() {
+        this.transform.zoomLevel = Math.max(0.5, this.transform.zoomLevel - 0.1);
+    }
+    
+    /**
+     * Reset zoom to 1.0
+     */
+    resetZoom() {
+        this.transform.zoomLevel = 1.0;
+    }
+    
+    /**
+     * Get current zoom level
+     * @returns {number} Current zoom level
+     */
+    getZoomLevel() {
+        return this.transform.zoomLevel;
     }
     
     /**
