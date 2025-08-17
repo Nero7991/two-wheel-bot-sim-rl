@@ -551,6 +551,12 @@
                                 Training Speed: <span id="training-speed-value" class="slider-value">1.0x</span>
                             </label>
                             <input type="range" id="training-speed" min="0.1" max="100" step="0.1" value="1.0">
+                            <div style="margin-top: 8px; display: flex; gap: 4px; justify-content: center;">
+                                <button id="speed-1x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">1x</button>
+                                <button id="speed-2x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">2x</button>
+                                <button id="speed-10x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">10x</button>
+                                <button id="speed-100x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">100x</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -567,11 +573,12 @@
                             <select id="network-preset">
                                 <option value="MICRO">Micro Bot (4 neurons, &lt;50 params)</option>
                                 <option value="NANO">Nano Bot (6 neurons, &lt;80 params)</option>
-                                <option value="CLASSIC" selected>Classic Bot (8 neurons, &lt;150 params)</option>
+                                <option value="CLASSIC">Classic Bot (8 neurons, &lt;150 params)</option>
                                 <option value="ENHANCED">Enhanced Bot (12→8, &lt;400 params)</option>
                                 <option value="ADVANCED">Advanced Bot (16→12→8, &lt;800 params)</option>
                                 <option value="RESEARCH">Research Bot (32→24→16→8, &lt;2K params)</option>
                                 <option value="MAXIMUM">Maximum Bot (64→48→32→24→16, &lt;10K params)</option>
+                                <option value="DQN_STANDARD" selected>DQN Standard (128 neurons, ~771 params)</option>
                                 <option value="CUSTOM">Custom Configuration</option>
                             </select>
                         </div>

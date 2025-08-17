@@ -36,7 +36,7 @@ class UIControls {
         
         // Network architecture configuration
         this.networkConfig = {
-            preset: 'CLASSIC',
+            preset: 'DQN_STANDARD',
             customLayers: [8],
             currentArchitecture: null
         };
@@ -73,6 +73,20 @@ class UIControls {
             this.setParameter('trainingSpeed', value);
             trainingSpeedValue.textContent = `${value.toFixed(1)}x`;
             this.app.setTrainingSpeed(value);
+        });
+        
+        // Speed preset buttons
+        document.getElementById('speed-1x').addEventListener('click', () => {
+            this.setSpeedPreset(1.0);
+        });
+        document.getElementById('speed-2x').addEventListener('click', () => {
+            this.setSpeedPreset(2.0);
+        });
+        document.getElementById('speed-10x').addEventListener('click', () => {
+            this.setSpeedPreset(10.0);
+        });
+        document.getElementById('speed-100x').addEventListener('click', () => {
+            this.setSpeedPreset(100.0);
         });
         
         // Debug speed control for manual testing
@@ -472,6 +486,14 @@ class UIControls {
         } catch (error) {
             console.warn('Failed to load parameters from localStorage:', error);
         }
+    }
+    
+    setSpeedPreset(speed) {
+        this.setParameter('trainingSpeed', speed);
+        document.getElementById('training-speed').value = speed;
+        document.getElementById('training-speed-value').textContent = `${speed.toFixed(1)}x`;
+        this.app.setTrainingSpeed(speed);
+        console.log(`Speed preset set to ${speed}x`);
     }
     
     resetToDefaults() {

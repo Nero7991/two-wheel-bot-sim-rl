@@ -174,6 +174,17 @@ export const NetworkPresets = {
         deployment: 'web'
     }),
     
+    // DQN Standard architecture matching PyTorch tutorial
+    DQN_STANDARD: new NetworkArchitecture({
+        name: 'DQN Standard',
+        description: 'PyTorch DQN tutorial standard (proven hyperparameters)',
+        layers: [128],
+        maxParameters: 1000,
+        memoryConstraint: 2048,
+        targetFrequency: 100,
+        deployment: 'web'
+    }),
+    
     // Custom starting point
     CUSTOM: new NetworkArchitecture({
         name: 'Custom',

@@ -246,39 +246,18 @@ export class BalancingRobot {
     _calculateReward(prevState, motorTorque) {
         // Check if robot has failed
         if (this.state.hasFailed()) {
-            return -1.0; // Small penalty for falling
+            return -10.0; // Penalty for falling
         }
 
-        // SIMPLE REWARD: Just reward staying upright
-        // The closer to vertical (angle = 0), the better
+        // MINIMAL REWARD: Standard inverted pendulum reward
+        // Just reward staying upright, keep it simple for debugging
         const angleError = Math.abs(this.state.angle);
         const maxAngle = Math.PI / 3; // 60 degrees before failure
         
-        // Linear reward: 1.0 when perfectly upright, 0.0 when at failure angle
+        // Simple reward: 1.0 when upright, 0.0 when at failure angle
         const uprightReward = 1.0 - (angleError / maxAngle);
         
-        // Small penalty for high angular velocity (spinning is bad)
-        const angularVelPenalty = -Math.abs(this.state.angularVelocity) * 0.01;
-        
-        // CORRECTIVE ACTION BONUS/PENALTY: Reward balancing, penalize unbalancing
-        let correctiveReward = 0;
-        const angleThreshold = 0.05; // Only apply when significantly tilted (3°)
-        const actionThreshold = 0.1;  // Only consider significant actions
-        
-        if (Math.abs(prevState.angle) > angleThreshold && Math.abs(motorTorque) > actionThreshold) {
-            // If tilting left (negative angle) and going left (negative torque) - GOOD corrective
-            // If tilting right (positive angle) and going right (positive torque) - GOOD corrective
-            if ((prevState.angle < 0 && motorTorque < 0) || (prevState.angle > 0 && motorTorque > 0)) {
-                correctiveReward = 0.1; // Bonus for taking corrective action
-            }
-            // If tilting left (negative angle) and going right (positive torque) - BAD destabilizing
-            // If tilting right (positive angle) and going left (negative torque) - BAD destabilizing
-            else if ((prevState.angle < 0 && motorTorque > 0) || (prevState.angle > 0 && motorTorque < 0)) {
-                correctiveReward = -0.2; // Penalty for taking destabilizing action (larger than bonus)
-            }
-        }
-        
-        return uprightReward + angularVelPenalty + correctiveReward;
+        return uprightReward;
     }
 
     /**

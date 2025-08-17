@@ -86,6 +86,14 @@ export class NeuralNetwork {
         if (input.length !== this.inputSize) {
             throw new Error(`Input size mismatch. Expected ${this.inputSize}, got ${input.length}`);
         }
+        
+        // Check for NaN and infinite values in input
+        for (let i = 0; i < input.length; i++) {
+            if (!isFinite(input[i])) {
+                console.warn(`Invalid input value at index ${i}: ${input[i]}, clamping to valid range`);
+                input[i] = Math.max(-1, Math.min(1, isNaN(input[i]) ? 0 : input[i]));
+            }
+        }
     }
 
     /**
@@ -100,6 +108,14 @@ export class NeuralNetwork {
         if (output.length !== this.outputSize) {
             throw new Error(`Output size mismatch. Expected ${this.outputSize}, got ${output.length}`);
         }
+        
+        // Check for NaN and infinite values
+        for (let i = 0; i < output.length; i++) {
+            if (!isFinite(output[i])) {
+                console.warn(`Invalid output value at index ${i}: ${output[i]}, replacing with 0`);
+                output[i] = 0;
+            }
+        }
     }
 }
 
@@ -111,8 +127,8 @@ export const NetworkConfig = {
     INPUT_SIZE: 2,          // Robot state: angle, angular velocity
     OUTPUT_SIZE: 3,         // Actions: left motor, right motor, brake
     MIN_HIDDEN_SIZE: 4,     // Minimum hidden layer size
-    MAX_HIDDEN_SIZE: 16,    // Maximum hidden layer size
-    MAX_PARAMETERS: 200,    // Maximum total parameters for embedded deployment
+    MAX_HIDDEN_SIZE: 256,   // Maximum hidden layer size (updated for DQN standards)
+    MAX_PARAMETERS: 50000,  // Maximum total parameters (updated for DQN web training)
     
     // Activation functions
     ACTIVATION: {

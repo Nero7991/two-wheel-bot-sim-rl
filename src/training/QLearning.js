@@ -22,17 +22,17 @@ import { NetworkConfig } from '../network/NeuralNetwork.js';
  */
 export class Hyperparameters {
     constructor(options = {}) {
-        // Learning parameters
-        this.learningRate = this._validateParameter(options.learningRate, 0.001, 0.0001, 0.1, 'learningRate');
-        this.gamma = this._validateParameter(options.gamma, 0.95, 0.5, 0.999, 'gamma');
+        // Learning parameters - Updated to match PyTorch DQN tutorial standards
+        this.learningRate = this._validateParameter(options.learningRate, 3e-4, 0.0001, 0.01, 'learningRate');
+        this.gamma = this._validateParameter(options.gamma, 0.99, 0.9, 0.999, 'gamma');
         
-        // Exploration parameters
-        this.epsilon = this._validateParameter(options.epsilon, 0.1, 0.0, 1.0, 'epsilon');
+        // Exploration parameters - Linear epsilon decay like PyTorch tutorial
+        this.epsilon = this._validateParameter(options.epsilon, 0.9, 0.0, 1.0, 'epsilon');
         this.epsilonMin = this._validateParameter(options.epsilonMin, 0.01, 0.0, 0.1, 'epsilonMin');
-        this.epsilonDecay = this._validateParameter(options.epsilonDecay, 0.995, 0.9, 0.9999, 'epsilonDecay');
+        this.epsilonDecay = this._validateParameter(options.epsilonDecay, 2500, 1000, 10000, 'epsilonDecay'); // Steps for linear decay
         
-        // Training parameters
-        this.batchSize = this._validateParameter(options.batchSize, 32, 1, 128, 'batchSize');
+        // Training parameters - Updated to match PyTorch standards
+        this.batchSize = this._validateParameter(options.batchSize, 128, 16, 256, 'batchSize');
         this.targetUpdateFreq = this._validateParameter(options.targetUpdateFreq, 100, 10, 1000, 'targetUpdateFreq');
         this.maxEpisodes = this._validateParameter(options.maxEpisodes, 1000, 10, 10000, 'maxEpisodes');
         this.maxStepsPerEpisode = this._validateParameter(options.maxStepsPerEpisode, 500, 50, 2000, 'maxStepsPerEpisode');
@@ -41,8 +41,8 @@ export class Hyperparameters {
         this.convergenceWindow = this._validateParameter(options.convergenceWindow, 100, 10, 500, 'convergenceWindow');
         this.convergenceThreshold = this._validateParameter(options.convergenceThreshold, 200, 50, 1000, 'convergenceThreshold');
         
-        // Network architecture
-        this.hiddenSize = this._validateParameter(options.hiddenSize, 8, 4, 16, 'hiddenSize');
+        // Network architecture - Updated to match PyTorch DQN tutorial (128 neurons)
+        this.hiddenSize = this._validateParameter(options.hiddenSize, 128, 64, 256, 'hiddenSize');
     }
     
     _validateParameter(value, defaultValue, min, max, name) {
@@ -250,6 +250,7 @@ export class QLearning {
         this.isInitialized = false;
         this.episode = 0;
         this.stepCount = 0;
+        this.globalStepCount = 0; // Global step counter for linear epsilon decay
         this.lastTargetUpdate = 0;
         
         // Action space (discrete actions for continuous control)
@@ -328,6 +329,12 @@ export class QLearning {
             throw new Error('Q-Learning not initialized. Call initialize() first.');
         }
         
+        // Increment global step counter for linear epsilon decay
+        this.globalStepCount++;
+        
+        // Update epsilon using linear decay (PyTorch style)
+        this._updateEpsilon();
+        
         // Add experience to replay buffer
         this.replayBuffer.add(state, action, reward, nextState, done);
         
@@ -340,6 +347,23 @@ export class QLearning {
     }
     
     /**
+     * Update epsilon using linear decay schedule (PyTorch DQN style)
+     * @private
+     */
+    _updateEpsilon() {
+        if (this.globalStepCount < this.hyperparams.epsilonDecay) {
+            // Linear interpolation from epsilon start to epsilon end
+            const epsilonStart = 0.9;
+            const epsilonEnd = this.hyperparams.epsilonMin;
+            const fraction = this.globalStepCount / this.hyperparams.epsilonDecay;
+            this.hyperparams.epsilon = epsilonStart + fraction * (epsilonEnd - epsilonStart);
+        } else {
+            // Keep at minimum after decay period
+            this.hyperparams.epsilon = this.hyperparams.epsilonMin;
+        }
+    }
+    
+    /**
      * Train on a batch of experiences from replay buffer
      * @private
      * @returns {number} Average training loss
@@ -347,6 +371,14 @@ export class QLearning {
     _trainBatch() {
         const batch = this.replayBuffer.sample(this.hyperparams.batchSize);
         let totalLoss = 0;
+        
+        // Debug: Check weight statistics before training
+        if (this.stepCount % 50 === 0) {
+            const weights = this.qNetwork.getWeights();
+            const outputWeights = weights.weightsHiddenOutput;
+            const weightMagnitude = Math.sqrt(outputWeights.reduce((sum, w) => sum + w * w, 0) / outputWeights.length);
+            console.log(`Step ${this.stepCount} - Weight magnitude: ${weightMagnitude.toFixed(6)}`);
+        }
         
         for (const experience of batch) {
             const { state, action, reward, nextState, done } = experience;
@@ -365,8 +397,16 @@ export class QLearning {
                 targetQ = reward + this.hyperparams.gamma * maxNextQ;
             }
             
-            // Calculate temporal difference error
-            const tdError = targetQ - currentQ;
+            // Calculate temporal difference error with clipping
+            let tdError = targetQ - currentQ;
+            
+            // Clip TD error to prevent explosive gradients (relaxed since reward timing is fixed)
+            tdError = Math.max(-5.0, Math.min(5.0, tdError));
+            
+            // Debug: Log TD errors periodically
+            if (this.stepCount % 50 === 0 && experience === batch[0]) {
+                console.log(`TD Error: ${tdError.toFixed(4)}, Current Q: ${currentQ.toFixed(4)}, Target Q: ${targetQ.toFixed(4)}`);
+            }
             
             // Update Q-network using gradient descent
             const loss = this._updateNetwork(state, action, tdError);
@@ -379,13 +419,14 @@ export class QLearning {
         if (this.stepCount - this.lastTargetUpdate >= this.hyperparams.targetUpdateFreq) {
             this._updateTargetNetwork();
             this.lastTargetUpdate = this.stepCount;
+            console.log(`Target network updated at step ${this.stepCount}`);
         }
         
         return totalLoss / batch.length;
     }
     
     /**
-     * Update Q-network weights using simple gradient descent
+     * Update Q-network weights using backpropagation
      * @private
      * @param {Float32Array} state - Input state
      * @param {number} action - Action index
@@ -393,27 +434,73 @@ export class QLearning {
      * @returns {number} Mean squared error loss
      */
     _updateNetwork(state, action, tdError) {
-        // Simple gradient update: approximate gradient using finite differences
         const learningRate = this.hyperparams.learningRate;
         
-        // Get current weights
+        // Get current weights and hidden activations
         const weights = this.qNetwork.getWeights();
-        
-        // Calculate loss (MSE)
-        const loss = 0.5 * tdError * tdError;
-        
-        // Update output layer weights (simplified gradient)
-        // This is a simplified update - in practice, you'd compute actual gradients
-        const outputWeights = weights.weightsHiddenOutput;
         const hiddenActivation = this._getHiddenActivation(state);
         
-        for (let i = 0; i < hiddenActivation.length; i++) {
-            const weightIndex = action * hiddenActivation.length + i;
-            outputWeights[weightIndex] += learningRate * tdError * hiddenActivation[i];
-        }
+        // Calculate Huber loss (PyTorch DQN style) - more robust than MSE
+        const huberDelta = 1.0; // Standard Huber loss delta
+        const absError = Math.abs(tdError);
+        const loss = absError <= huberDelta ? 
+            0.5 * tdError * tdError : 
+            huberDelta * (absError - 0.5 * huberDelta);
         
-        // Update output bias
-        weights.biasOutput[action] += learningRate * tdError;
+        // Backpropagation: Update output layer weights and biases with strong gradient clipping
+        const outputWeights = weights.weightsHiddenOutput;
+        for (let i = 0; i < hiddenActivation.length; i++) {
+            // Correct indexing: weights are stored as [hidden][output]
+            const weightIndex = i * this.numActions + action;
+            let gradient = tdError * hiddenActivation[i];
+            // Moderate gradient clipping (relaxed since reward timing is fixed)
+            gradient = Math.max(-0.5, Math.min(0.5, gradient));
+            outputWeights[weightIndex] += learningRate * gradient;
+            
+            // Clamp weights to reasonable range
+            outputWeights[weightIndex] = Math.max(-10.0, Math.min(10.0, outputWeights[weightIndex]));
+        }
+        // Clip bias gradient (relaxed since reward timing is fixed)
+        let biasGradient = Math.max(-0.5, Math.min(0.5, tdError));
+        weights.biasOutput[action] += learningRate * biasGradient;
+        
+        // Clamp bias to reasonable range
+        weights.biasOutput[action] = Math.max(-10.0, Math.min(10.0, weights.biasOutput[action]));
+        
+        // Backpropagation: Update hidden layer weights and biases
+        // Gradient for hidden layer = output error * output weight * ReLU derivative
+        const inputWeights = weights.weightsInputHidden;
+        const hiddenBiases = weights.biasHidden;
+        
+        for (let h = 0; h < hiddenActivation.length; h++) {
+            // ReLU derivative: 1 if activation > 0, 0 otherwise
+            const reluDerivative = hiddenActivation[h] > 0 ? 1.0 : 0.0;
+            
+            // Error signal propagated back to this hidden unit
+            // Correct indexing for output weights
+            const hiddenWeightIndex = h * this.numActions + action;
+            const hiddenError = tdError * outputWeights[hiddenWeightIndex] * reluDerivative;
+            
+            // Update input-to-hidden weights with strong gradient clipping
+            // Correct indexing: weights are stored as [input][hidden]
+            for (let i = 0; i < state.length; i++) {
+                const inputWeightIndex = i * hiddenActivation.length + h;
+                let gradient = hiddenError * state[i];
+                // Moderate gradient clipping (relaxed since reward timing is fixed)
+                gradient = Math.max(-0.5, Math.min(0.5, gradient));
+                inputWeights[inputWeightIndex] += learningRate * gradient;
+                
+                // Clamp weights to reasonable range
+                inputWeights[inputWeightIndex] = Math.max(-10.0, Math.min(10.0, inputWeights[inputWeightIndex]));
+            }
+            
+            // Update hidden biases with moderate gradient clipping
+            let biasGradient = Math.max(-0.5, Math.min(0.5, hiddenError));
+            hiddenBiases[h] += learningRate * biasGradient;
+            
+            // Clamp bias to reasonable range
+            hiddenBiases[h] = Math.max(-10.0, Math.min(10.0, hiddenBiases[h]));
+        }
         
         // Set updated weights
         this.qNetwork.setWeights(weights);
@@ -425,24 +512,14 @@ export class QLearning {
      * Get hidden layer activation for given state
      * @private
      * @param {Float32Array} state - Input state
-     * @returns {Array} Hidden layer activation
+     * @returns {Float32Array} Hidden layer activation
      */
     _getHiddenActivation(state) {
-        // This is a simplified version - ideally we'd modify CPUBackend to expose intermediate activations
-        // For now, we'll approximate by running a forward pass and estimating
-        const qValues = this.qNetwork.forward(state);
+        // Run forward pass to get hidden activations
+        this.qNetwork.forward(state);
         
-        // Create a simplified hidden activation based on input
-        const hiddenSize = this.hyperparams.hiddenSize;
-        const hidden = new Array(hiddenSize);
-        
-        for (let i = 0; i < hiddenSize; i++) {
-            // Simple approximation: ReLU(weighted sum of inputs)
-            const weight = (state[0] * (i + 1) + state[1] * (i + 2)) / hiddenSize;
-            hidden[i] = Math.max(0, weight);
-        }
-        
-        return hidden;
+        // Get the actual hidden layer activations from the network
+        return this.qNetwork.getHiddenActivations();
     }
     
     /**
@@ -502,10 +579,7 @@ export class QLearning {
             state = nextState;
         }
         
-        // Decay epsilon
-        if (this.hyperparams.epsilon > this.hyperparams.epsilonMin) {
-            this.hyperparams.epsilon *= this.hyperparams.epsilonDecay;
-        }
+        // Epsilon decay is now handled in _updateEpsilon() called from train()
         
         this.episode++;
         
