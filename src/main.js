@@ -75,6 +75,16 @@ class UIControls {
             this.app.setTrainingSpeed(value);
         });
         
+        // Debug speed control for manual testing
+        const debugSpeedSlider = document.getElementById('debug-speed');
+        const debugSpeedValue = document.getElementById('debug-speed-value');
+        
+        debugSpeedSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.app.setDebugSpeed(value);
+            debugSpeedValue.textContent = `${value.toFixed(1)}x`;
+        });
+        
         // Network configuration controls
         this.setupNetworkConfiguration();
         
@@ -500,11 +510,17 @@ class TwoWheelBotRL {
         this.episodeCount = 0;
         this.bestScore = 0;
         this.currentReward = 0;
+        this.lastQValue = 0;
         
         // Training control
         this.trainingSpeed = 1.0;
         this.targetPhysicsStepsPerFrame = 1;
         this.episodeEnded = false; // Flag to prevent multiple episode end calls
+        
+        // Debug control speed
+        this.debugSpeed = 1.0;
+        this.debugLastAction = 'None';
+        this.debugCurrentReward = 0;
         
         // Demo modes
         this.demoMode = 'physics'; // 'physics', 'training', 'evaluation', 'manual'
@@ -543,6 +559,13 @@ class TwoWheelBotRL {
             deviceInfo: null,
             error: null
         };
+        
+        // Q-learning training state
+        this.previousState = null;
+        this.previousAction = undefined;
+        this.previousReward = 0;
+        this.previousDone = false;
+        this.lastTrainingLoss = 0;
     }
 
     async initialize() {
@@ -956,8 +979,14 @@ class TwoWheelBotRL {
             }
             this.lastFrameTime = timestamp;
             
-            // Update physics at fixed intervals
-            if (timestamp - this.lastPhysicsUpdate >= this.physicsUpdateInterval) {
+            // Update physics at fixed intervals, with debug speed control for manual mode
+            let updateInterval = this.physicsUpdateInterval;
+            if (this.demoMode === 'manual' || this.demoMode === 'physics') {
+                // Apply debug speed: slower speed = longer interval, faster speed = shorter interval
+                updateInterval = this.physicsUpdateInterval / this.debugSpeed;
+            }
+            
+            if (timestamp - this.lastPhysicsUpdate >= updateInterval) {
                 this.updatePhysics();
                 this.updateRenderer();
                 this.updateUI();
@@ -981,6 +1010,11 @@ class TwoWheelBotRL {
         
         for (let step = 0; step < stepsToRun; step++) {
             let motorTorque = 0;
+            let actionIndex = 0;
+            
+            // Get current state for Q-learning
+            const currentState = this.robot.getState();
+            const normalizedState = currentState.getNormalizedInputs();
             
             // Get motor torque based on current mode
             switch (this.demoMode) {
@@ -994,7 +1028,9 @@ class TwoWheelBotRL {
                     break;
                 case 'training':
                     if (this.isTraining && !this.isPaused) {
-                        motorTorque = this.getTrainingTorque();
+                        const trainingResult = this.getTrainingTorqueWithAction();
+                        motorTorque = trainingResult.torque;
+                        actionIndex = trainingResult.actionIndex;
                     } else {
                         // When training paused/stopped: user arrows take precedence over PD controller
                         if (this.userControlEnabled && (this.manualControl.leftPressed || this.manualControl.rightPressed)) {
@@ -1022,6 +1058,55 @@ class TwoWheelBotRL {
             // Step physics simulation
             const result = this.robot.step(motorTorque);
             this.currentReward = result.reward;
+            
+            // Update debug reward display during manual control modes
+            if (this.demoMode === 'manual' || this.demoMode === 'physics') {
+                this.debugCurrentReward = result.reward;
+            }
+            
+            // Q-learning training integration
+            if (this.demoMode === 'training' && this.isTraining && !this.isPaused && this.qlearning) {
+                // Get next state after physics step
+                const nextState = result.state.getNormalizedInputs();
+                
+                // Train on previous experience if we have one
+                if (this.previousState && this.previousAction !== undefined) {
+                    const loss = this.qlearning.train(
+                        this.previousState,      // Previous state
+                        this.previousAction,     // Previous action  
+                        this.previousReward,     // ✅ FIXED: Reward from previous action
+                        nextState,              // Current state (next state)
+                        this.previousDone       // ✅ FIXED: Done from previous step
+                    );
+                    
+                    // Store training loss for metrics with NaN protection
+                    this.lastTrainingLoss = isFinite(loss) ? loss : 0;
+                }
+                
+                // Store current experience for next iteration (unless episode is done)
+                if (!result.done) {
+                    this.previousState = normalizedState.slice();
+                    this.previousAction = actionIndex;
+                    this.previousReward = result.reward;  // Store current reward for next iteration
+                    this.previousDone = result.done;
+                } else {
+                    // Episode ended - train on final experience
+                    const finalLoss = this.qlearning.train(
+                        normalizedState,        // Current state  
+                        actionIndex,           // Current action
+                        result.reward,         // ✅ FIXED: Current reward
+                        nextState,            // Final state (after step)
+                        result.done           // ✅ FIXED: Current done status
+                    );
+                    this.lastTrainingLoss = isFinite(finalLoss) ? finalLoss : 0;
+                    
+                    // Clear previous state to start fresh next episode
+                    this.previousState = null;
+                    this.previousAction = undefined;
+                    this.previousReward = 0;
+                    this.previousDone = false;
+                }
+            }
             
             // Handle episode completion for training/evaluation (only once per episode)
             // Skip episode completion when training is paused to prevent falling/resetting
@@ -1072,6 +1157,23 @@ class TwoWheelBotRL {
         // Update epsilon display
         if (this.qlearning) {
             document.getElementById('epsilon-display').textContent = `Epsilon: ${this.qlearning.hyperparams.epsilon.toFixed(3)}`;
+        }
+        
+        // Update training loss display
+        document.getElementById('training-loss').textContent = `Training Loss: ${this.lastTrainingLoss.toFixed(4)}`;
+        
+        // Update Q-value display
+        document.getElementById('qvalue-estimate').textContent = `Q-Value: ${this.lastQValue.toFixed(3)}`;
+        
+        // Update debug display during manual control
+        if (this.demoMode === 'manual' || this.demoMode === 'physics') {
+            const robotState = this.robot ? this.robot.getState() : null;
+            if (robotState) {
+                document.getElementById('debug-last-action').textContent = this.debugLastAction;
+                document.getElementById('debug-current-reward').textContent = this.debugCurrentReward.toFixed(3);
+                document.getElementById('debug-robot-angle').textContent = `${(robotState.angle * 180 / Math.PI).toFixed(2)}°`;
+                document.getElementById('debug-angular-velocity').textContent = `${robotState.angularVelocity.toFixed(3)} rad/s`;
+            }
         }
         
         // Update training status indicator
@@ -1239,9 +1341,12 @@ class TwoWheelBotRL {
             maxStepsPerEpisode: 1000,
             hiddenSize: this.uiControls.getParameter('hiddenNeurons')
         } : {
-            learningRate: 0.001,
-            epsilon: 0.3,
-            epsilonDecay: 0.995,
+            learningRate: 0.001,  // Increased now that reward timing is fixed
+            epsilon: 0.3,         // Moderate exploration
+            epsilonDecay: 0.995,  // Slower epsilon decay for stability
+            gamma: 0.95,          // Standard discount factor
+            batchSize: 8,         // Larger batch for stability
+            targetUpdateFreq: 100, // Standard update frequency
             maxEpisodes: 1000,
             maxStepsPerEpisode: 1000,
             hiddenSize: 8
@@ -1292,16 +1397,45 @@ class TwoWheelBotRL {
      * Get motor torque from Q-learning during training
      */
     getTrainingTorque() {
-        if (!this.qlearning) return 0;
+        const result = this.getTrainingTorqueWithAction();
+        return result.torque;
+    }
+    
+    /**
+     * Get motor torque and action index from Q-learning during training
+     */
+    getTrainingTorqueWithAction() {
+        if (!this.qlearning) return { torque: 0, actionIndex: 0 };
         
         const state = this.robot.getState();
         const normalizedState = state.getNormalizedInputs();
         
+        // Get Q-values for current state
+        const qValues = this.qlearning.getAllQValues(normalizedState);
+        
         // Select action using epsilon-greedy policy
         const actionIndex = this.qlearning.selectAction(normalizedState, true);
-        const actions = [-3.0, 0.0, 3.0]; // Left, brake, right
+        const actions = [-1.0, 0.0, 1.0]; // Left, brake, right (standardized with QLearning.js)
         
-        return actions[actionIndex];
+        // Update last Q-value for display (max Q-value) with NaN protection
+        if (qValues && qValues.length > 0) {
+            const validQValues = Array.from(qValues).filter(val => isFinite(val));
+            this.lastQValue = validQValues.length > 0 ? Math.max(...validQValues) : 0;
+            
+            // Debug: Log Q-values periodically to see if they're changing
+            if (this.trainingStep % 100 === 0) {
+                console.log(`Step ${this.trainingStep} Q-values:`, 
+                    Array.from(qValues).map(v => v.toFixed(4)), 
+                    'Max:', this.lastQValue.toFixed(4));
+            }
+        } else {
+            this.lastQValue = 0;
+        }
+        
+        return {
+            torque: actions[actionIndex],
+            actionIndex: actionIndex
+        };
     }
     
     /**
@@ -1315,7 +1449,7 @@ class TwoWheelBotRL {
         
         // Select best action (no exploration)
         const actionIndex = this.qlearning.selectAction(normalizedState, false);
-        const actions = [-3.0, 0.0, 3.0];
+        const actions = [-1.0, 0.0, 1.0]; // Standardized action values
         
         return actions[actionIndex];
     }
@@ -1326,6 +1460,13 @@ class TwoWheelBotRL {
     startNewEpisode() {
         this.trainingStep = 0;
         this.episodeEnded = false; // Reset episode end flag
+        
+        // Reset Q-learning training state
+        this.previousState = null;
+        this.previousAction = undefined;
+        this.previousReward = 0;
+        this.previousDone = false;
+        this.lastTrainingLoss = 0;
         
         // Reset robot with small random perturbation
         this.robot.reset({
@@ -1355,13 +1496,18 @@ class TwoWheelBotRL {
             console.log(`Episode ${this.episodeCount} completed: Reward=${totalReward.toFixed(2)}, Steps=${this.trainingStep}`);
             
             // Update performance charts with episode completion data
-            if (this.performanceCharts) {
+            if (this.performanceCharts && this.qlearning) {
+                // Get current Q-value estimate for balanced state
+                const balancedState = new Float32Array([0.0, 0.0]); // Perfectly balanced
+                const qValues = this.qlearning.getAllQValues(balancedState);
+                const avgQValue = Array.from(qValues).reduce((a, b) => a + b, 0) / qValues.length;
+                
                 this.performanceCharts.updateMetrics({
                     episode: this.episodeCount,
                     reward: totalReward,
-                    loss: Math.random() * 0.5, // Placeholder - will be replaced with actual loss
-                    qValue: Math.random() * 2 - 1, // Placeholder Q-value
-                    epsilon: 0.3 // Current epsilon value
+                    loss: this.lastTrainingLoss || 0,
+                    qValue: avgQValue,
+                    epsilon: this.qlearning.hyperparams.epsilon
                 });
             }
             
@@ -1437,6 +1583,11 @@ class TwoWheelBotRL {
         this.trainingSpeed = Math.max(0.1, Math.min(100.0, speed));
         this.targetPhysicsStepsPerFrame = Math.round(this.trainingSpeed);
         console.log(`Training speed set to ${speed}x (${this.targetPhysicsStepsPerFrame} steps/frame)`);
+    }
+    
+    setDebugSpeed(speed) {
+        this.debugSpeed = Math.max(0.1, Math.min(2.0, speed));
+        console.log(`Debug speed set to ${speed}x`);
     }
     
     updateNetworkArchitecture(architecture) {
@@ -1524,15 +1675,19 @@ class TwoWheelBotRL {
         if (this.manualControl.leftPressed && this.manualControl.rightPressed) {
             // Both pressed - no movement
             this.manualControl.manualTorque = 0;
+            this.debugLastAction = 'Left+Right (Cancel)';
         } else if (this.manualControl.leftPressed) {
             // Left pressed - negative torque (move left)
             this.manualControl.manualTorque = -maxTorque * 0.8;
+            this.debugLastAction = 'Left';
         } else if (this.manualControl.rightPressed) {
             // Right pressed - positive torque (move right)  
             this.manualControl.manualTorque = maxTorque * 0.8;
+            this.debugLastAction = 'Right';
         } else {
             // No keys pressed
             this.manualControl.manualTorque = 0;
+            this.debugLastAction = 'None';
         }
     }
     

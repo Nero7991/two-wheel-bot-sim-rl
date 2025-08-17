@@ -43,9 +43,9 @@ export class RobotState {
      * @returns {Float32Array} [normalizedAngle, normalizedAngularVelocity]
      */
     getNormalizedInputs() {
-        // Normalize angle to [-1, 1] range (assuming max angle is π/3)
-        const normalizedAngle = this.angle / (Math.PI / 3);
-        // Normalize angular velocity to [-1, 1] range (assuming max is 10 rad/s)
+        // Normalize angle to [-1, 1] range (assuming max angle is π/3) and clamp
+        const normalizedAngle = Math.max(-1, Math.min(1, this.angle / (Math.PI / 3)));
+        // Normalize angular velocity to [-1, 1] range (assuming max is 10 rad/s) and clamp
         const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.angularVelocity / 10));
         
         return new Float32Array([normalizedAngle, normalizedAngularVelocity]);
@@ -170,7 +170,7 @@ export class BalancingRobot {
         this.state.angle = this._normalizeAngle(this.state.angle);
 
         // Calculate reward
-        const reward = this._calculateReward(prevState);
+        const reward = this._calculateReward(prevState, this.currentMotorTorque);
         this.totalReward += reward;
 
         // Check if episode is done after physics update
@@ -240,29 +240,45 @@ export class BalancingRobot {
      * Calculate reward function for reinforcement learning
      * @private
      * @param {RobotState} prevState - Previous state for comparison
+     * @param {number} motorTorque - Action taken (motor torque applied)
      * @returns {number} Reward value
      */
-    _calculateReward(prevState) {
-        let reward = 0;
-
+    _calculateReward(prevState, motorTorque) {
         // Check if robot has failed
         if (this.state.hasFailed()) {
-            return -100; // Large penalty for failure
+            return -1.0; // Small penalty for falling
         }
 
-        // Alive bonus for staying upright
-        reward += 1.0;
-
-        // Angle penalty - penalize deviation from upright
-        reward += -Math.abs(this.state.angle) * 10;
-
-        // Angular velocity penalty - penalize fast spinning
-        reward += -Math.abs(this.state.angularVelocity) * 0.5;
-
-        // Motor effort penalty - encourage efficiency
-        reward += -Math.abs(this.currentMotorTorque) * 0.1;
-
-        return reward;
+        // SIMPLE REWARD: Just reward staying upright
+        // The closer to vertical (angle = 0), the better
+        const angleError = Math.abs(this.state.angle);
+        const maxAngle = Math.PI / 3; // 60 degrees before failure
+        
+        // Linear reward: 1.0 when perfectly upright, 0.0 when at failure angle
+        const uprightReward = 1.0 - (angleError / maxAngle);
+        
+        // Small penalty for high angular velocity (spinning is bad)
+        const angularVelPenalty = -Math.abs(this.state.angularVelocity) * 0.01;
+        
+        // CORRECTIVE ACTION BONUS/PENALTY: Reward balancing, penalize unbalancing
+        let correctiveReward = 0;
+        const angleThreshold = 0.05; // Only apply when significantly tilted (3°)
+        const actionThreshold = 0.1;  // Only consider significant actions
+        
+        if (Math.abs(prevState.angle) > angleThreshold && Math.abs(motorTorque) > actionThreshold) {
+            // If tilting left (negative angle) and going left (negative torque) - GOOD corrective
+            // If tilting right (positive angle) and going right (positive torque) - GOOD corrective
+            if ((prevState.angle < 0 && motorTorque < 0) || (prevState.angle > 0 && motorTorque > 0)) {
+                correctiveReward = 0.1; // Bonus for taking corrective action
+            }
+            // If tilting left (negative angle) and going right (positive torque) - BAD destabilizing
+            // If tilting right (positive angle) and going left (negative torque) - BAD destabilizing
+            else if ((prevState.angle < 0 && motorTorque > 0) || (prevState.angle > 0 && motorTorque < 0)) {
+                correctiveReward = -0.2; // Penalty for taking destabilizing action (larger than bonus)
+            }
+        }
+        
+        return uprightReward + angularVelPenalty + correctiveReward;
     }
 
     /**
