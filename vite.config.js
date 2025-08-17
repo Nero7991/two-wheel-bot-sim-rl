@@ -3,9 +3,10 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   // Server configuration for development
   server: {
-    port: 3000,
-    host: true, // Allow external connections
+    port: 3005,
+    host: '0.0.0.0', // Bind to all interfaces for external access
     cors: true,
+    allowedHosts: ['apps.orenslab.com', 'botsim.orenslab.com'],
     headers: {
       // Required headers for WebGPU and SharedArrayBuffer
       'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -134,7 +135,7 @@ export default defineConfig({
   // Preview server configuration (for vite preview)
   preview: {
     port: 4173,
-    host: true,
+    host: '0.0.0.0', // Bind to all interfaces for external access
     cors: true,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
