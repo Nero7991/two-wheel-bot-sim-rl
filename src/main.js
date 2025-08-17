@@ -547,6 +547,11 @@ class TwoWheelBotRL {
         // Demo modes
         this.demoMode = 'physics'; // 'physics', 'training', 'evaluation', 'manual'
         
+        // Model management state
+        this.currentModelName = 'No model loaded';
+        this.modelHasUnsavedChanges = false;
+        this.trainingStartTime = null;
+        
         // Manual control state
         this.manualControl = {
             enabled: false,
@@ -622,6 +627,7 @@ class TwoWheelBotRL {
             // Initialize UI state
             this.updatePDControllerUI();
             this.updateUserControlUI();
+            this.updateModelDisplay('No model loaded', null);
             
             this.isInitialized = true;
             console.log('Application initialized successfully!');
@@ -755,13 +761,11 @@ class TwoWheelBotRL {
         
         // Model management controls
         document.getElementById('save-model').addEventListener('click', () => {
-            console.log('Save model');
-            // Will be implemented in export module
+            this.saveModelToLocalStorage();
         });
         
         document.getElementById('load-model').addEventListener('click', () => {
-            console.log('Load model');
-            // Will be implemented in export module
+            this.loadModelFromLocalStorage();
         });
         
         document.getElementById('test-model-btn')?.addEventListener('click', () => {
@@ -770,15 +774,11 @@ class TwoWheelBotRL {
         });
         
         document.getElementById('export-model').addEventListener('click', () => {
-            console.log('Export model');
-            // Will be implemented in export module
+            this.exportModelToCpp();
         });
         
         document.getElementById('reset-parameters').addEventListener('click', () => {
-            if (this.uiControls) {
-                this.uiControls.resetToDefaults();
-                console.log('Parameters reset to defaults');
-            }
+            this.resetModelParameters();
         });
         
         // WebGPU status refresh
@@ -875,10 +875,27 @@ class TwoWheelBotRL {
         this.isPaused = false;
         this.demoMode = 'training';
         
-        // Reset for new training session
-        this.episodeCount = 0;
-        this.trainingStep = 0;
-        this.bestScore = -Infinity;
+        // Track training start time for model naming
+        this.trainingStartTime = new Date();
+        const timestamp = this.trainingStartTime.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        
+        // Update model name to indicate active training
+        if (this.currentModelName === 'No model loaded' || !this.currentModelName.startsWith('TwoWheelBot_DQN_')) {
+            this.currentModelName = `Unsaved_DQN_${timestamp}`;
+        }
+        this.modelHasUnsavedChanges = true;
+        
+        // Don't reset if we have a loaded model and are continuing training
+        if (!this.qlearning || this.episodeCount === 0) {
+            // Reset for new training session
+            this.episodeCount = 0;
+            this.trainingStep = 0;
+            this.bestScore = -Infinity;
+        }
+        
+        // Update model display
+        this.updateTrainingModelDisplay();
+        
         this.startNewEpisode();
         
         document.getElementById('start-training').disabled = true;
@@ -897,6 +914,9 @@ class TwoWheelBotRL {
         
         const pauseButton = document.getElementById('pause-training');
         pauseButton.textContent = this.isPaused ? 'Resume Training' : 'Pause Training';
+        
+        // Update model display to show paused/training status
+        this.updateTrainingModelDisplay();
         
         console.log('Training', this.isPaused ? 'paused' : 'resumed');
     }
@@ -1552,6 +1572,9 @@ class TwoWheelBotRL {
             this.episodeCount++;
             console.log(`Episode ${this.episodeCount} completed: Reward=${totalReward.toFixed(2)}, Steps=${this.trainingStep}`);
             
+            // Update model display with latest stats
+            this.updateTrainingModelDisplay();
+            
             // Check for training completion before auto-pause
             if (this.qlearning && this.qlearning.trainingCompleted) {
                 this.pauseTraining();
@@ -1860,6 +1883,371 @@ class TwoWheelBotRL {
                 velocity: 0
             });
             console.log('Robot position reset');
+        }
+    }
+    
+    /**
+     * Model Management Methods
+     */
+    
+    saveModelToLocalStorage() {
+        if (!this.qlearning || !this.qlearning.isInitialized) {
+            alert('No trained model to save. Please train the model first.');
+            return;
+        }
+        
+        // Generate model name with timestamp
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const modelName = `TwoWheelBot_DQN_${timestamp}`;
+        
+        // Get model data
+        const modelData = this.qlearning.save();
+        
+        // Add metadata
+        const saveData = {
+            name: modelName,
+            timestamp: now.toISOString(),
+            type: 'DQN',
+            architecture: this.qlearning.getStats(),
+            episodesTrained: this.episodeCount,
+            bestScore: this.bestScore,
+            trainingCompleted: this.qlearning.trainingCompleted,
+            consecutiveMaxEpisodes: this.qlearning.consecutiveMaxEpisodes,
+            modelData: modelData
+        };
+        
+        // Save to localStorage
+        try {
+            localStorage.setItem(`model_${modelName}`, JSON.stringify(saveData));
+            
+            // Save model name to list of saved models
+            let savedModels = JSON.parse(localStorage.getItem('savedModelsList') || '[]');
+            if (!savedModels.includes(modelName)) {
+                savedModels.push(modelName);
+                localStorage.setItem('savedModelsList', JSON.stringify(savedModels));
+            }
+            
+            // Update UI and clear unsaved flag
+            this.currentModelName = modelName;
+            this.modelHasUnsavedChanges = false;
+            this.updateModelDisplay(modelName, saveData);
+            
+            alert(`Model saved successfully as:\n${modelName}`);
+            console.log('Model saved:', modelName);
+        } catch (error) {
+            alert('Failed to save model: ' + error.message);
+            console.error('Save model error:', error);
+        }
+    }
+    
+    loadModelFromLocalStorage() {
+        // Get list of saved models
+        const savedModels = JSON.parse(localStorage.getItem('savedModelsList') || '[]');
+        
+        if (savedModels.length === 0) {
+            alert('No saved models found.');
+            return;
+        }
+        
+        // Create selection dialog
+        const modelList = savedModels.map((name, index) => `${index + 1}. ${name}`).join('\n');
+        const selection = prompt(`Select a model to load:\n\n${modelList}\n\nEnter the number:`);
+        
+        if (!selection) return;
+        
+        const modelIndex = parseInt(selection) - 1;
+        if (modelIndex < 0 || modelIndex >= savedModels.length) {
+            alert('Invalid selection.');
+            return;
+        }
+        
+        const modelName = savedModels[modelIndex];
+        
+        try {
+            const saveData = JSON.parse(localStorage.getItem(`model_${modelName}`));
+            
+            if (!saveData || !saveData.modelData) {
+                alert('Model data is corrupted or missing.');
+                return;
+            }
+            
+            // Load model into Q-learning
+            this.loadModel(saveData);
+            
+            alert(`Model loaded successfully:\n${modelName}`);
+            console.log('Model loaded:', modelName);
+        } catch (error) {
+            alert('Failed to load model: ' + error.message);
+            console.error('Load model error:', error);
+        }
+    }
+    
+    async loadModel(saveData) {
+        // Initialize Q-learning if not already done
+        if (!this.qlearning) {
+            await this.initializeQLearning();
+        }
+        
+        // Load the model data
+        await this.qlearning.load(saveData.modelData);
+        
+        // Restore training state
+        this.episodeCount = saveData.episodesTrained || 0;
+        this.bestScore = saveData.bestScore || 0;
+        
+        // Set current model name and clear unsaved flag
+        this.currentModelName = saveData.name;
+        this.modelHasUnsavedChanges = false;
+        
+        // Update UI
+        this.updateModelDisplay(saveData.name, saveData);
+    }
+    
+    exportModelToCpp() {
+        if (!this.qlearning || !this.qlearning.isInitialized) {
+            alert('No trained model to export. Please train the model first.');
+            return;
+        }
+        
+        // Generate filename with timestamp
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = `two_wheel_bot_dqn_${timestamp}.cpp`;
+        
+        // Get model weights
+        const weights = this.qlearning.qNetwork.getWeights();
+        const architecture = this.qlearning.qNetwork.getArchitecture();
+        
+        // Generate C++ code
+        let cppCode = this.generateCppCode(weights, architecture, timestamp);
+        
+        // Create download
+        const blob = new Blob([cppCode], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        alert(`Model exported as C++ file:\n${filename}`);
+        console.log('Model exported:', filename);
+    }
+    
+    generateCppCode(weights, architecture, timestamp) {
+        const { inputSize, hiddenSize, outputSize } = architecture;
+        
+        return `/**
+ * Two-Wheel Balancing Robot DQN Model
+ * Generated: ${timestamp}
+ * Architecture: ${inputSize}-${hiddenSize}-${outputSize}
+ * 
+ * This file contains the trained neural network weights for deployment
+ * on embedded systems (Arduino, ESP32, STM32, etc.)
+ */
+
+#include <math.h>
+
+class TwoWheelBotDQN {
+private:
+    static const int INPUT_SIZE = ${inputSize};
+    static const int HIDDEN_SIZE = ${hiddenSize};
+    static const int OUTPUT_SIZE = ${outputSize};
+    
+    // Network weights (stored in program memory to save RAM)
+    const float weightsInputHidden[INPUT_SIZE * HIDDEN_SIZE] = {
+        ${this.formatWeights(weights.weightsInputHidden, 8)}
+    };
+    
+    const float biasHidden[HIDDEN_SIZE] = {
+        ${this.formatWeights(weights.biasHidden, 8)}
+    };
+    
+    const float weightsHiddenOutput[HIDDEN_SIZE * OUTPUT_SIZE] = {
+        ${this.formatWeights(weights.weightsHiddenOutput, 8)}
+    };
+    
+    const float biasOutput[OUTPUT_SIZE] = {
+        ${this.formatWeights(weights.biasOutput, 8)}
+    };
+    
+    // Activation function (ReLU)
+    float relu(float x) {
+        return x > 0 ? x : 0;
+    }
+    
+public:
+    /**
+     * Get action from current state
+     * @param angle Robot angle in radians
+     * @param angularVelocity Angular velocity in rad/s
+     * @return Action index (0=left, 1=brake, 2=right)
+     */
+    int getAction(float angle, float angularVelocity) {
+        // Normalize inputs
+        float input[INPUT_SIZE];
+        input[0] = constrain(angle / (M_PI / 3), -1.0, 1.0);
+        input[1] = constrain(angularVelocity / 10.0, -1.0, 1.0);
+        
+        // Hidden layer computation
+        float hidden[HIDDEN_SIZE];
+        for (int h = 0; h < HIDDEN_SIZE; h++) {
+            hidden[h] = biasHidden[h];
+            for (int i = 0; i < INPUT_SIZE; i++) {
+                hidden[h] += input[i] * weightsInputHidden[i * HIDDEN_SIZE + h];
+            }
+            hidden[h] = relu(hidden[h]);
+        }
+        
+        // Output layer computation
+        float output[OUTPUT_SIZE];
+        float maxValue = -1e10;
+        int bestAction = 0;
+        
+        for (int o = 0; o < OUTPUT_SIZE; o++) {
+            output[o] = biasOutput[o];
+            for (int h = 0; h < HIDDEN_SIZE; h++) {
+                output[o] += hidden[h] * weightsHiddenOutput[h * OUTPUT_SIZE + o];
+            }
+            
+            // Track best action
+            if (output[o] > maxValue) {
+                maxValue = output[o];
+                bestAction = o;
+            }
+        }
+        
+        return bestAction;
+    }
+    
+    /**
+     * Get motor torque for action
+     * @param action Action index
+     * @return Motor torque (-1.0 to 1.0)
+     */
+    float getMotorTorque(int action) {
+        const float actions[3] = {-1.0, 0.0, 1.0};
+        return actions[action];
+    }
+    
+private:
+    float constrain(float value, float min, float max) {
+        if (value < min) return min;
+        if (value > max) return max;
+        return value;
+    }
+};
+
+// Usage example:
+// TwoWheelBotDQN bot;
+// int action = bot.getAction(angle, angularVelocity);
+// float torque = bot.getMotorTorque(action);
+`;
+    }
+    
+    formatWeights(weights, itemsPerLine) {
+        const formatted = [];
+        for (let i = 0; i < weights.length; i += itemsPerLine) {
+            const line = weights.slice(i, i + itemsPerLine)
+                .map(w => w.toFixed(6) + 'f')
+                .join(', ');
+            formatted.push('        ' + line);
+        }
+        return formatted.join(',\n');
+    }
+    
+    resetModelParameters() {
+        if (!this.qlearning || !this.qlearning.isInitialized) {
+            alert('No model to reset. Please initialize training first.');
+            return;
+        }
+        
+        if (!confirm('Are you sure you want to reset all model parameters? This will lose all training progress.')) {
+            return;
+        }
+        
+        // Reset Q-learning
+        this.qlearning.reset();
+        
+        // Reset training state
+        this.episodeCount = 0;
+        this.trainingStep = 0;
+        this.bestScore = 0;
+        
+        // Reset model name
+        this.currentModelName = 'No model loaded';
+        this.modelHasUnsavedChanges = false;
+        
+        // Update UI
+        this.updateModelDisplay('Untrained Model', null);
+        
+        alert('Model parameters have been reset.');
+        console.log('Model parameters reset');
+    }
+    
+    updateModelDisplay(modelName, saveData) {
+        const nameElement = document.getElementById('current-model-name');
+        const statsElement = document.getElementById('model-stats');
+        
+        if (nameElement) {
+            nameElement.textContent = modelName || 'No model loaded';
+        }
+        
+        if (statsElement && saveData) {
+            const stats = [];
+            if (saveData.episodesTrained) {
+                stats.push(`Episodes: ${saveData.episodesTrained}`);
+            }
+            if (saveData.bestScore) {
+                stats.push(`Best Score: ${saveData.bestScore.toFixed(1)}`);
+            }
+            if (saveData.trainingCompleted) {
+                stats.push('✓ Training Completed');
+            }
+            if (saveData.timestamp) {
+                const date = new Date(saveData.timestamp);
+                stats.push(`Saved: ${date.toLocaleDateString()} ${date.toLocaleTimeString()}`);
+            }
+            statsElement.textContent = stats.join(' | ');
+        } else if (statsElement) {
+            statsElement.textContent = '';
+        }
+    }
+    
+    updateTrainingModelDisplay() {
+        const nameElement = document.getElementById('current-model-name');
+        const statsElement = document.getElementById('model-stats');
+        
+        if (nameElement) {
+            let displayName = this.currentModelName;
+            if (this.modelHasUnsavedChanges && !displayName.includes('(unsaved)')) {
+                displayName += ' (unsaved)';
+            }
+            nameElement.textContent = displayName;
+        }
+        
+        if (statsElement) {
+            const stats = [];
+            stats.push(`Episodes: ${this.episodeCount}`);
+            if (this.bestScore && this.bestScore > -Infinity) {
+                stats.push(`Best: ${this.bestScore.toFixed(1)}`);
+            }
+            if (this.qlearning) {
+                if (this.qlearning.trainingCompleted) {
+                    stats.push('✓ Completed');
+                } else if (this.qlearning.consecutiveMaxEpisodes > 0) {
+                    stats.push(`Progress: ${this.qlearning.consecutiveMaxEpisodes}/20`);
+                }
+                if (this.isTraining && !this.isPaused) {
+                    stats.push('🔴 Training');
+                } else if (this.isPaused) {
+                    stats.push('⏸️ Paused');
+                }
+            }
+            statsElement.textContent = stats.join(' | ');
         }
     }
 }
