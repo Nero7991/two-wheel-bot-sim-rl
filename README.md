@@ -13,6 +13,8 @@ Train a neural network to balance a two-wheeled robot directly in your browser. 
 - WebGPU acceleration providing 5-10x training speedup
 - Real-time 2D physics visualization
 - Manual control mode for debugging and testing
+- Robustness testing with manual perturbations during AI control
+- Model import/export with C++ code generation
 - Multiple network architectures from 4 to 256 neurons
 
 ### Machine Learning
@@ -38,6 +40,13 @@ Train a neural network to balance a two-wheeled robot directly in your browser. 
 
 ### Online Demo
 Visit [https://botsim.orenslab.com](https://botsim.orenslab.com) to try the simulator immediately in your browser.
+
+### Pre-trained Models
+The `models/` directory contains pre-trained C++ models ready for testing:
+- `good_two_wheel_bot_dqn_2025-08-17T19-28-58.cpp` - Well-trained model with robust balancing
+- `okayish_two_wheel_bot_dqn_2025-08-17T17-26-44.cpp` - Partially trained model for comparison
+
+Import these models using the "Import from C++" button in the Model Management section to test them immediately.
 
 ### Local Development
 
@@ -71,7 +80,14 @@ npm run dev
 4. Adjust speed slider for slow-motion testing
 5. Monitor real-time reward values
 
-### 3. Advanced Configuration
+### 3. Robustness Testing
+1. Load or train a model
+2. Click "Test Model" to enter evaluation mode
+3. Enable "User Control" to perturb the robot while AI is balancing
+4. Use arrow keys to push the robot and test recovery
+5. Watch the AI attempt to maintain balance under disturbance
+
+### 4. Advanced Configuration
 - Network Architecture: Choose from Micro (4 neurons) to DQN Standard (128 neurons)
 - Hyperparameters: Adjust learning rate, epsilon, batch size
 - Physics Parameters: Modify robot mass, height, motor strength
