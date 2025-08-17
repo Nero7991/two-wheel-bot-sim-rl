@@ -117,9 +117,29 @@ export class CPUBackend extends NeuralNetwork {
             this.outputSize
         );
         
-        // Validate and return output
+        // Validate and return output with Q-value clamping
         this.validateOutput(output);
+        
+        // Clamp Q-values to prevent explosive growth
+        for (let i = 0; i < output.length; i++) {
+            output[i] = Math.max(-100.0, Math.min(100.0, output[i]));
+        }
+        
         return output;
+    }
+
+    /**
+     * Get the most recent hidden layer activations from forward pass
+     * @returns {Float32Array} Hidden layer activations
+     */
+    getHiddenActivations() {
+        if (!this.isInitialized) {
+            throw new Error('Network not initialized');
+        }
+        if (!this.hiddenActivation) {
+            throw new Error('No forward pass performed yet');
+        }
+        return this.hiddenActivation.slice();
     }
 
     /**

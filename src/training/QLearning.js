@@ -803,18 +803,52 @@ export class QLearning {
      * @param {Object} modelData - Saved model data
      */
     async load(modelData) {
-        this.hyperparams = new Hyperparameters(modelData.hyperparams);
+        // Extract architecture from saved weights
+        const savedArchitecture = modelData.qNetworkWeights?.architecture;
+        if (!savedArchitecture) {
+            throw new Error('Invalid model data: missing architecture information');
+        }
+        
+        // Check if we need to reinitialize with different architecture
+        if (this.isInitialized) {
+            const currentArch = this.qNetwork.getArchitecture();
+            
+            if (currentArch.inputSize !== savedArchitecture.inputSize ||
+                currentArch.hiddenSize !== savedArchitecture.hiddenSize ||
+                currentArch.outputSize !== savedArchitecture.outputSize) {
+                
+                console.log(`Architecture mismatch detected:`);
+                console.log(`  Current: ${currentArch.inputSize}-${currentArch.hiddenSize}-${currentArch.outputSize}`);
+                console.log(`  Saved: ${savedArchitecture.inputSize}-${savedArchitecture.hiddenSize}-${savedArchitecture.outputSize}`);
+                console.log(`  Reinitializing with saved architecture...`);
+                
+                // Reset to uninitialized state
+                this.isInitialized = false;
+                this.qNetwork = null;
+                this.targetNetwork = null;
+            }
+        }
+        
+        // Update hyperparameters, ensuring hiddenSize matches saved architecture
+        this.hyperparams = new Hyperparameters({
+            ...modelData.hyperparams,
+            hiddenSize: savedArchitecture.hiddenSize
+        });
         this.episode = modelData.episode || 0;
         this.stepCount = modelData.stepCount || 0;
         this.actions = modelData.actions || [-1.0, 0.0, 1.0];
         this.numActions = this.actions.length;
         
-        await this.initialize();
+        // Initialize with correct architecture
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
         
+        // Load weights (should now be compatible)
         this.qNetwork.setWeights(modelData.qNetworkWeights);
         this.targetNetwork.setWeights(modelData.targetNetworkWeights);
         
-        console.log('Q-Learning model loaded successfully');
+        console.log(`Q-Learning model loaded successfully with architecture: ${savedArchitecture.inputSize}-${savedArchitecture.hiddenSize}-${savedArchitecture.outputSize}`);
     }
     
     /**

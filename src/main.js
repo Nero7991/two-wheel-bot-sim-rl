@@ -764,10 +764,6 @@ class TwoWheelBotRL {
             this.saveModelToLocalStorage();
         });
         
-        document.getElementById('load-model').addEventListener('click', () => {
-            this.loadModelFromLocalStorage();
-        });
-        
         document.getElementById('test-model-btn')?.addEventListener('click', () => {
             this.switchDemoMode('evaluation');
             console.log('Testing trained model');
@@ -775,6 +771,10 @@ class TwoWheelBotRL {
         
         document.getElementById('export-model').addEventListener('click', () => {
             this.exportModelToCpp();
+        });
+        
+        document.getElementById('import-model').addEventListener('click', () => {
+            this.importModelFromCpp();
         });
         
         document.getElementById('reset-parameters').addEventListener('click', () => {
@@ -820,6 +820,9 @@ class TwoWheelBotRL {
         
         // Setup collapsible sections
         this.setupCollapsibleSections();
+        
+        // Initialize model list
+        this.refreshModelList();
         
         console.log('Controls initialized');
     }
@@ -1933,6 +1936,9 @@ class TwoWheelBotRL {
             this.modelHasUnsavedChanges = false;
             this.updateModelDisplay(modelName, saveData);
             
+            // Refresh the model list to show the new/updated model
+            this.refreshModelList();
+            
             alert(`Model saved successfully as:\n${modelName}`);
             console.log('Model saved:', modelName);
         } catch (error) {
@@ -1941,29 +1947,110 @@ class TwoWheelBotRL {
         }
     }
     
-    loadModelFromLocalStorage() {
+    refreshModelList() {
         // Get list of saved models
         const savedModels = JSON.parse(localStorage.getItem('savedModelsList') || '[]');
+        const listContainer = document.getElementById('saved-models-list');
+        const noModelsMsg = document.getElementById('no-saved-models');
+        
+        if (!listContainer || !noModelsMsg) return;
+        
+        // Clear existing list
+        listContainer.innerHTML = '';
         
         if (savedModels.length === 0) {
-            alert('No saved models found.');
+            noModelsMsg.style.display = 'block';
             return;
         }
         
-        // Create selection dialog
-        const modelList = savedModels.map((name, index) => `${index + 1}. ${name}`).join('\n');
-        const selection = prompt(`Select a model to load:\n\n${modelList}\n\nEnter the number:`);
+        noModelsMsg.style.display = 'none';
         
-        if (!selection) return;
+        // Create list items for each model
+        savedModels.forEach(modelName => {
+            try {
+                const saveData = JSON.parse(localStorage.getItem(`model_${modelName}`));
+                if (!saveData) return;
+                
+                const modelItem = this.createModelListItem(modelName, saveData);
+                listContainer.appendChild(modelItem);
+            } catch (error) {
+                console.error(`Error loading model ${modelName}:`, error);
+            }
+        });
+    }
+    
+    createModelListItem(modelName, saveData) {
+        const isCurrent = this.currentModelName === modelName;
         
-        const modelIndex = parseInt(selection) - 1;
-        if (modelIndex < 0 || modelIndex >= savedModels.length) {
-            alert('Invalid selection.');
-            return;
+        // Create model item container
+        const modelItem = document.createElement('div');
+        modelItem.className = `model-item ${isCurrent ? 'current' : ''}`;
+        modelItem.id = `model-item-${modelName}`;
+        
+        // Create header with name and actions
+        const header = document.createElement('div');
+        header.className = 'model-item-header';
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'model-item-name';
+        nameDiv.innerHTML = modelName;
+        if (isCurrent) {
+            nameDiv.innerHTML += '<span class="current-badge">LOADED</span>';
         }
         
-        const modelName = savedModels[modelIndex];
+        const actions = document.createElement('div');
+        actions.className = 'model-item-actions';
         
+        if (isCurrent) {
+            // Unload button for current model
+            const unloadBtn = document.createElement('button');
+            unloadBtn.textContent = 'Unload';
+            unloadBtn.onclick = () => this.unloadModel();
+            actions.appendChild(unloadBtn);
+        } else {
+            // Load button for other models
+            const loadBtn = document.createElement('button');
+            loadBtn.textContent = 'Load';
+            loadBtn.className = 'primary';
+            loadBtn.onclick = () => this.loadModelByName(modelName);
+            actions.appendChild(loadBtn);
+        }
+        
+        // Delete button for all models
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.className = 'danger';
+        deleteBtn.onclick = () => this.deleteModel(modelName);
+        actions.appendChild(deleteBtn);
+        
+        header.appendChild(nameDiv);
+        header.appendChild(actions);
+        
+        // Create details section
+        const details = document.createElement('div');
+        details.className = 'model-item-details';
+        
+        // Extract model info
+        const architecture = saveData.modelData?.qNetworkWeights?.architecture;
+        const episodes = saveData.episodesTrained || 0;
+        const bestScore = saveData.bestScore || 0;
+        const timestamp = saveData.timestamp ? new Date(saveData.timestamp).toLocaleString() : 'Unknown';
+        const completed = saveData.trainingCompleted ? 'Yes' : 'No';
+        
+        details.innerHTML = `
+            <div class="model-item-detail"><strong>Architecture:</strong> ${architecture ? `${architecture.inputSize}-${architecture.hiddenSize}-${architecture.outputSize}` : 'Unknown'}</div>
+            <div class="model-item-detail"><strong>Episodes:</strong> ${episodes} | <strong>Best Score:</strong> ${bestScore.toFixed(0)}</div>
+            <div class="model-item-detail"><strong>Training Complete:</strong> ${completed}</div>
+            <div class="model-item-detail"><strong>Saved:</strong> ${timestamp}</div>
+        `;
+        
+        modelItem.appendChild(header);
+        modelItem.appendChild(details);
+        
+        return modelItem;
+    }
+    
+    async loadModelByName(modelName) {
         try {
             const saveData = JSON.parse(localStorage.getItem(`model_${modelName}`));
             
@@ -1973,7 +2060,10 @@ class TwoWheelBotRL {
             }
             
             // Load model into Q-learning
-            this.loadModel(saveData);
+            await this.loadModel(saveData);
+            
+            // Refresh the model list to update UI
+            this.refreshModelList();
             
             alert(`Model loaded successfully:\n${modelName}`);
             console.log('Model loaded:', modelName);
@@ -1983,13 +2073,99 @@ class TwoWheelBotRL {
         }
     }
     
+    unloadModel() {
+        if (confirm('Are you sure you want to unload the current model?\nAny unsaved changes will be lost.')) {
+            // Reset Q-learning
+            if (this.qlearning) {
+                this.qlearning.reset();
+            }
+            
+            // Reset state
+            this.currentModelName = 'No model loaded';
+            this.modelHasUnsavedChanges = false;
+            this.episodeCount = 0;
+            this.bestScore = 0;
+            
+            // Update display
+            this.updateModelDisplay('No model loaded', null);
+            this.refreshModelList();
+            
+            console.log('Model unloaded');
+        }
+    }
+    
+    deleteModel(modelName) {
+        const isCurrent = this.currentModelName === modelName;
+        const confirmMsg = isCurrent ? 
+            `Are you sure you want to delete the currently loaded model "${modelName}"?\nThis action cannot be undone.` :
+            `Are you sure you want to delete "${modelName}"?\nThis action cannot be undone.`;
+        
+        if (confirm(confirmMsg)) {
+            try {
+                // Remove from localStorage
+                localStorage.removeItem(`model_${modelName}`);
+                
+                // Update saved models list
+                let savedModels = JSON.parse(localStorage.getItem('savedModelsList') || '[]');
+                savedModels = savedModels.filter(name => name !== modelName);
+                localStorage.setItem('savedModelsList', JSON.stringify(savedModels));
+                
+                // If deleting current model, unload it
+                if (isCurrent) {
+                    this.currentModelName = 'No model loaded';
+                    this.modelHasUnsavedChanges = false;
+                    this.updateModelDisplay('No model loaded', null);
+                }
+                
+                // Refresh the model list
+                this.refreshModelList();
+                
+                console.log(`Model deleted: ${modelName}`);
+                alert(`Model "${modelName}" has been deleted.`);
+            } catch (error) {
+                alert('Failed to delete model: ' + error.message);
+                console.error('Delete model error:', error);
+            }
+        }
+    }
+    
     async loadModel(saveData) {
-        // Initialize Q-learning if not already done
-        if (!this.qlearning) {
-            await this.initializeQLearning();
+        // Extract architecture from saved model
+        const savedArchitecture = saveData.modelData?.qNetworkWeights?.architecture;
+        if (!savedArchitecture) {
+            throw new Error('Invalid model data: missing architecture information');
         }
         
-        // Load the model data
+        // Check if current Q-learning exists and has compatible architecture
+        let needsReinit = false;
+        if (this.qlearning && this.qlearning.isInitialized) {
+            const currentArch = this.qlearning.qNetwork.getArchitecture();
+            
+            if (currentArch.inputSize !== savedArchitecture.inputSize ||
+                currentArch.hiddenSize !== savedArchitecture.hiddenSize ||
+                currentArch.outputSize !== savedArchitecture.outputSize) {
+                
+                console.log(`Model architecture mismatch:`);
+                console.log(`  Current: ${currentArch.inputSize}-${currentArch.hiddenSize}-${currentArch.outputSize}`);
+                console.log(`  Loading: ${savedArchitecture.inputSize}-${savedArchitecture.hiddenSize}-${savedArchitecture.outputSize}`);
+                
+                needsReinit = true;
+            }
+        }
+        
+        // Initialize Q-learning if not exists or architecture mismatch
+        if (!this.qlearning || needsReinit) {
+            // Update UI controls to match loaded model architecture
+            if (this.uiControls) {
+                this.uiControls.setParameter('hiddenNeurons', savedArchitecture.hiddenSize);
+            }
+            
+            await this.initializeQLearning({
+                hiddenSize: savedArchitecture.hiddenSize
+            });
+        }
+        
+        // Load the model data (Q-learning.load now handles architecture validation internally)
         await this.qlearning.load(saveData.modelData);
         
         // Restore training state
@@ -2000,8 +2176,10 @@ class TwoWheelBotRL {
         this.currentModelName = saveData.name;
         this.modelHasUnsavedChanges = false;
         
-        // Update UI
+        // Update UI to reflect loaded model architecture
         this.updateModelDisplay(saveData.name, saveData);
+        
+        console.log(`Model loaded: ${saveData.name} with architecture ${savedArchitecture.inputSize}-${savedArchitecture.hiddenSize}-${savedArchitecture.outputSize}`);
     }
     
     exportModelToCpp() {
@@ -2035,6 +2213,237 @@ class TwoWheelBotRL {
         
         alert(`Model exported as C++ file:\n${filename}`);
         console.log('Model exported:', filename);
+    }
+    
+    importModelFromCpp() {
+        const fileInput = document.getElementById('cpp-file-input');
+        
+        // Create new file input handler
+        const handleFileSelect = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const cppContent = e.target.result;
+                    console.log('Parsing C++ file:', file.name);
+                    const importedModel = this.parseCppModel(cppContent, file.name);
+                    console.log('Parsed model:', importedModel);
+                    
+                    await this.loadImportedModel(importedModel);
+                    
+                    // Verify it was saved to localStorage
+                    const savedModels = JSON.parse(localStorage.getItem('savedModelsList') || '[]');
+                    console.log('Updated saved models list:', savedModels);
+                    
+                    alert(`Model imported successfully from:\n${file.name}\n\nModel name: ${importedModel.name}`);
+                    console.log('Model imported successfully:', file.name);
+                } catch (error) {
+                    alert('Failed to import model: ' + error.message);
+                    console.error('Import error:', error);
+                }
+            };
+            
+            reader.readAsText(file);
+            
+            // Reset file input
+            fileInput.value = '';
+            fileInput.removeEventListener('change', handleFileSelect);
+        };
+        
+        // Add event listener and trigger file dialog
+        fileInput.addEventListener('change', handleFileSelect);
+        fileInput.click();
+    }
+    
+    parseCppModel(cppContent, filename) {
+        // Extract architecture information
+        const inputSizeMatch = cppContent.match(/static const int INPUT_SIZE = (\d+);/);
+        const hiddenSizeMatch = cppContent.match(/static const int HIDDEN_SIZE = (\d+);/);
+        const outputSizeMatch = cppContent.match(/static const int OUTPUT_SIZE = (\d+);/);
+        
+        if (!inputSizeMatch || !hiddenSizeMatch || !outputSizeMatch) {
+            throw new Error('Could not extract network architecture from C++ file');
+        }
+        
+        const inputSize = parseInt(inputSizeMatch[1]);
+        const hiddenSize = parseInt(hiddenSizeMatch[1]);
+        const outputSize = parseInt(outputSizeMatch[1]);
+        
+        // Extract weights arrays
+        const weightsInputHidden = this.extractWeightsArray(cppContent, 'weightsInputHidden');
+        const biasHidden = this.extractWeightsArray(cppContent, 'biasHidden');
+        const weightsHiddenOutput = this.extractWeightsArray(cppContent, 'weightsHiddenOutput');
+        const biasOutput = this.extractWeightsArray(cppContent, 'biasOutput');
+        
+        // Validate dimensions
+        if (weightsInputHidden.length !== inputSize * hiddenSize) {
+            throw new Error(`Expected ${inputSize * hiddenSize} input-to-hidden weights, got ${weightsInputHidden.length}`);
+        }
+        if (biasHidden.length !== hiddenSize) {
+            throw new Error(`Expected ${hiddenSize} hidden biases, got ${biasHidden.length}`);
+        }
+        if (weightsHiddenOutput.length !== hiddenSize * outputSize) {
+            throw new Error(`Expected ${hiddenSize * outputSize} hidden-to-output weights, got ${weightsHiddenOutput.length}`);
+        }
+        if (biasOutput.length !== outputSize) {
+            throw new Error(`Expected ${outputSize} output biases, got ${biasOutput.length}`);
+        }
+        
+        // Extract timestamp from filename or comment
+        const timestampMatch = filename.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/) || 
+                              cppContent.match(/Generated: (\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+        const timestamp = timestampMatch ? timestampMatch[1] : new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        
+        // Calculate parameter count
+        const parameterCount = weightsInputHidden.length + biasHidden.length + 
+                              weightsHiddenOutput.length + biasOutput.length;
+        
+        return {
+            name: `Imported_DQN_${timestamp}`,
+            architecture: { inputSize, hiddenSize, outputSize },
+            weights: {
+                architecture: {
+                    inputSize: inputSize,
+                    hiddenSize: hiddenSize,
+                    outputSize: outputSize,
+                    parameterCount: parameterCount
+                },
+                weightsInputHidden: Array.from(weightsInputHidden),
+                biasHidden: Array.from(biasHidden),
+                weightsHiddenOutput: Array.from(weightsHiddenOutput),
+                biasOutput: Array.from(biasOutput),
+                initMethod: 'imported'
+            },
+            filename: filename,
+            importDate: new Date().toISOString()
+        };
+    }
+    
+    extractWeightsArray(cppContent, arrayName) {
+        // Find the array declaration
+        const arrayPattern = new RegExp(`const float ${arrayName}\\[.*?\\] = \\{([^}]+)\\};`, 's');
+        const match = cppContent.match(arrayPattern);
+        
+        if (!match) {
+            throw new Error(`Could not find ${arrayName} array in C++ file`);
+        }
+        
+        // Extract values between braces
+        const arrayContent = match[1];
+        
+        // Parse individual values, handling potential line breaks and formatting
+        const values = arrayContent
+            .split(',')
+            .map(s => s.trim())
+            .filter(s => s.length > 0)
+            .map(s => {
+                // Remove 'f' suffix if present
+                const cleanValue = s.replace(/f$/, '');
+                const value = parseFloat(cleanValue);
+                if (isNaN(value)) {
+                    throw new Error(`Invalid weight value: ${s}`);
+                }
+                return value;
+            });
+        
+        return values;
+    }
+    
+    async loadImportedModel(importedModel) {
+        // Initialize Q-learning if not already done
+        if (!this.qlearning) {
+            await this.initializeQLearning();
+        }
+        
+        // Verify architecture compatibility
+        const currentArch = this.qlearning.qNetwork.getArchitecture();
+        const importedArch = importedModel.architecture;
+        
+        if (currentArch.inputSize !== importedArch.inputSize ||
+            currentArch.hiddenSize !== importedArch.hiddenSize ||
+            currentArch.outputSize !== importedArch.outputSize) {
+            
+            const recreate = confirm(
+                `Architecture mismatch:\n` +
+                `Current: ${currentArch.inputSize}-${currentArch.hiddenSize}-${currentArch.outputSize}\n` +
+                `Imported: ${importedArch.inputSize}-${importedArch.hiddenSize}-${importedArch.outputSize}\n\n` +
+                `Recreate network with imported architecture?`
+            );
+            
+            if (!recreate) {
+                throw new Error('Import cancelled - architecture mismatch');
+            }
+            
+            // Recreate Q-learning with imported architecture
+            await this.initializeQLearning({
+                hiddenSize: importedArch.hiddenSize
+            });
+        }
+        
+        // Load weights into network
+        this.qlearning.qNetwork.setWeights(importedModel.weights);
+        
+        // Update target network to match
+        this.qlearning.targetNetwork = this.qlearning.qNetwork.clone();
+        
+        // Reset training state for imported model
+        this.episodeCount = 0;
+        this.trainingStep = 0;
+        this.bestScore = 0;
+        
+        // Set model name and clear unsaved flag
+        this.currentModelName = importedModel.name;
+        this.modelHasUnsavedChanges = false;
+        
+        // Create complete model data for saving
+        const modelData = {
+            hyperparams: this.qlearning.hyperparams,
+            qNetworkWeights: importedModel.weights,  // Use the imported weights with architecture
+            targetNetworkWeights: importedModel.weights,  // Same weights for target network
+            episode: 0,
+            stepCount: 0,
+            metrics: { episodes: 0, totalSteps: 0, averageReward: 0, bestReward: 0 },
+            actions: this.qlearning.actions
+        };
+        
+        // Create save data compatible with localStorage format
+        const saveData = {
+            name: importedModel.name,
+            timestamp: importedModel.importDate,
+            type: 'Imported DQN',
+            architecture: importedArch,
+            episodesTrained: 0,
+            bestScore: 0,
+            trainingCompleted: false,
+            consecutiveMaxEpisodes: 0,
+            modelData: modelData,
+            importedFrom: importedModel.filename
+        };
+        
+        // Save imported model to localStorage so it appears in Load Model list
+        try {
+            localStorage.setItem(`model_${importedModel.name}`, JSON.stringify(saveData));
+            
+            // Add to saved models list
+            let savedModels = JSON.parse(localStorage.getItem('savedModelsList') || '[]');
+            if (!savedModels.includes(importedModel.name)) {
+                savedModels.push(importedModel.name);
+                localStorage.setItem('savedModelsList', JSON.stringify(savedModels));
+            }
+            console.log('Imported model saved to localStorage:', importedModel.name);
+        } catch (error) {
+            console.warn('Could not save imported model to localStorage:', error);
+        }
+        
+        // Update UI with imported model info (use the actual imported model as current)
+        this.updateModelDisplay(importedModel.name, saveData);
+        
+        // Refresh the model list to show the imported model
+        this.refreshModelList();
+        
+        console.log('Imported model loaded:', importedModel.name);
     }
     
     generateCppCode(weights, architecture, timestamp) {

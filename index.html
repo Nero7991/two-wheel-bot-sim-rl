@@ -485,6 +485,77 @@
             font-size: 0.7rem;
             margin-top: 4px;
         }
+        
+        /* Model list item styles */
+        .model-item {
+            background-color: #333;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 8px;
+            transition: background-color 0.2s;
+        }
+        
+        .model-item:hover {
+            background-color: #3a3a3a;
+        }
+        
+        .model-item.current {
+            border: 1px solid #00d4ff;
+            background-color: #2a3a3a;
+        }
+        
+        .model-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        
+        .model-item-name {
+            font-size: 0.85rem;
+            color: #fff;
+            font-weight: 500;
+        }
+        
+        .model-item.current .model-item-name {
+            color: #00d4ff;
+        }
+        
+        .model-item-actions {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .model-item-actions button {
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            min-width: 60px;
+        }
+        
+        .model-item-details {
+            font-size: 0.75rem;
+            color: #888;
+            line-height: 1.4;
+        }
+        
+        .model-item-detail {
+            margin: 2px 0;
+        }
+        
+        .model-item-detail strong {
+            color: #aaa;
+        }
+        
+        .current-badge {
+            background-color: #00d4ff;
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -686,10 +757,27 @@
                             <div id="current-model-name" style="color: #fff;">No model loaded</div>
                             <div id="model-stats" style="color: #888; font-size: 0.75rem; margin-top: 4px;"></div>
                         </div>
-                        <button id="save-model">Save Model</button>
-                        <button id="load-model">Load Model</button>
-                        <button id="export-model">Export to C++</button>
-                        <button id="reset-parameters">Reset Parameters</button>
+                        
+                        <div style="display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap;">
+                            <button id="save-model" class="primary">Save Current Model</button>
+                            <button id="export-model">Export to C++</button>
+                            <button id="import-model">Import from C++</button>
+                            <button id="reset-parameters" class="danger">Reset Parameters</button>
+                        </div>
+                        
+                        <div id="saved-models-section" style="margin-top: 15px;">
+                            <div style="color: #00d4ff; margin-bottom: 8px; font-size: 0.9rem; border-bottom: 1px solid #404040; padding-bottom: 4px;">
+                                Saved Models
+                            </div>
+                            <div id="saved-models-list" style="max-height: 300px; overflow-y: auto;">
+                                <!-- Model list will be dynamically populated here -->
+                            </div>
+                            <div id="no-saved-models" style="color: #666; font-size: 0.8rem; padding: 10px; text-align: center;">
+                                No saved models found
+                            </div>
+                        </div>
+                        
+                        <input type="file" id="cpp-file-input" accept=".cpp,.h,.txt" style="display: none;">
                     </div>
                 </div>
                 
