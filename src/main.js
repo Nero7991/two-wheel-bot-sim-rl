@@ -1087,7 +1087,13 @@ class TwoWheelBotRL {
                     }
                     break;
                 case 'evaluation':
-                    motorTorque = this.getEvaluationTorque();
+                    // Allow user control override during evaluation for robustness testing
+                    if (this.userControlEnabled && (this.manualControl.leftPressed || this.manualControl.rightPressed)) {
+                        motorTorque = this.getManualTorque();
+                        this.debugLastAction = `User: ${motorTorque.toFixed(2)}`;
+                    } else {
+                        motorTorque = this.getEvaluationTorque();
+                    }
                     break;
                 case 'manual':
                     // Manual mode: arrows take precedence over PD controller
@@ -1105,8 +1111,8 @@ class TwoWheelBotRL {
             const result = this.robot.step(motorTorque);
             this.currentReward = result.reward;
             
-            // Update debug reward display during manual control modes
-            if (this.demoMode === 'manual' || this.demoMode === 'physics') {
+            // Update debug reward display during manual control modes and evaluation
+            if (this.demoMode === 'manual' || this.demoMode === 'physics' || this.demoMode === 'evaluation') {
                 this.debugCurrentReward = result.reward;
             }
             
@@ -1180,12 +1186,13 @@ class TwoWheelBotRL {
                     return;
                 }
                 
-                // Check for episode termination based on position (robot moved off canvas)
-                if (!this.episodeEnded && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
-                    const robotState = this.robot.getState();
-                    const bounds = this.renderer ? this.renderer.getPhysicsBounds() : null;
-                    
-                    if (bounds && (robotState.position < bounds.minX || robotState.position > bounds.maxX)) {
+                // Check for robot moving off canvas in all modes
+                const robotState = this.robot.getState();
+                const bounds = this.renderer ? this.renderer.getPhysicsBounds() : null;
+                
+                if (bounds && (robotState.position < bounds.minX || robotState.position > bounds.maxX)) {
+                    // Handle based on mode
+                    if ((this.demoMode === 'training' || this.demoMode === 'evaluation') && !this.episodeEnded) {
                         console.log(`Episode terminated at step ${this.trainingStep} (robot moved off canvas: position=${robotState.position.toFixed(2)}m, bounds=[${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}])`);
                         this.episodeEnded = true;
                         // Create a synthetic "done" result with penalty for going off canvas
@@ -1196,6 +1203,15 @@ class TwoWheelBotRL {
                         };
                         this.handleEpisodeEnd(syntheticResult);
                         return;
+                    } else if (this.demoMode === 'manual' || this.demoMode === 'physics') {
+                        // Reset robot to origin for manual/physics modes
+                        console.log(`Robot moved off canvas in ${this.demoMode} mode, resetting to origin`);
+                        this.robot.reset({
+                            angle: 0,
+                            angularVelocity: 0,
+                            position: 0,
+                            velocity: 0
+                        });
                     }
                 }
             }
@@ -1245,8 +1261,8 @@ class TwoWheelBotRL {
         // Update Q-value display
         document.getElementById('qvalue-estimate').textContent = `Q-Value: ${this.lastQValue.toFixed(3)}`;
         
-        // Update debug display during manual control
-        if (this.demoMode === 'manual' || this.demoMode === 'physics') {
+        // Update debug display during manual control and evaluation
+        if (this.demoMode === 'manual' || this.demoMode === 'physics' || this.demoMode === 'evaluation') {
             const robotState = this.robot ? this.robot.getState() : null;
             if (robotState) {
                 document.getElementById('debug-last-action').textContent = this.debugLastAction;
