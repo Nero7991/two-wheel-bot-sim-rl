@@ -1,0 +1,35 @@
+File: index.html
+Purpose: Main HTML layout for Two-Wheel Balancing Robot RL web application
+
+Recent Changes:
+- Added four canvas elements to charts-panel for performance visualization:
+  - reward-chart: Episode reward tracking
+  - loss-chart: Training loss metrics
+  - qvalue-chart: Q-value evolution
+  - epsilon-chart: Exploration rate monitoring
+- Added "Test Model" button to training controls section
+- Implemented zoom control buttons in visualization section:
+  - Zoom In (+): Increase viewport scale
+  - Zoom Out (-): Decrease viewport scale  
+  - Reset Zoom: Return to default scale
+- Each chart canvas sized at 150px height with 100% width for responsive design
+
+Key Components:
+- app: Main application container with flex layout
+- header: Application title and branding
+- main-container: Horizontal flex container for simulation and panels
+- simulation-canvas: Primary canvas for robot visualization
+- controls-panel: Control interface with training parameters
+- charts-panel: New panel for performance graphs and metrics
+- webgpu-status: GPU availability indicator overlay
+
+Dependencies:
+- main.js: Application entry point loaded as ES module
+- Canvas API for simulation rendering
+- CSS Grid and Flexbox for responsive layout
+
+Architecture Notes:
+- Three-panel layout: simulation (flex), controls (300px), charts (350px)
+- Responsive design prioritizes simulation viewport on smaller screens
+- Dark theme with cyan accents for better visualization contrast
+- Modular CSS organization with component-based styling

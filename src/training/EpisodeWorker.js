@@ -65,14 +65,14 @@ function initializePhysics() {
             return new RobotState(this.angle, this.angularVelocity, this.position, this.velocity, this.wheelAngle, this.wheelVelocity);
         }
         
-        getNormalizedInputs() {
-            const normalizedAngle = Math.max(-1, Math.min(1, this.angle / (Math.PI / 3)));
+        getNormalizedInputs(maxAngle = Math.PI / 3) {
+            const normalizedAngle = Math.max(-1, Math.min(1, this.angle / maxAngle));
             const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.angularVelocity / 10));
             return new Float32Array([normalizedAngle, normalizedAngularVelocity]);
         }
         
-        hasFailed() {
-            return Math.abs(this.angle) > Math.PI / 3; // 60 degrees
+        hasFailed(maxAngle = Math.PI / 3) {
+            return Math.abs(this.angle) > maxAngle;
         }
     }
     
@@ -86,6 +86,10 @@ function initializePhysics() {
             this.damping = config.damping || 0.01;
             this.timestep = config.timestep || 0.006667; // Adjusted timestep
             this.rewardType = config.rewardType || 'simple';
+            
+            // Configurable angle and motor limits
+            this.maxAngle = config.maxAngle || Math.PI / 3; // Default 60 degrees
+            this.motorTorqueRange = config.motorTorqueRange || 1.0; // Default ±1.0 Nm
             
             this.gravity = 9.81;
             this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight;
@@ -111,7 +115,7 @@ function initializePhysics() {
         }
         
         step(motorTorque) {
-            if (this.state.hasFailed()) {
+            if (this.state.hasFailed(this.maxAngle)) {
                 return {
                     state: this.state.clone(),
                     reward: this.rewardType === 'simple' ? 0.0 : -10.0,
@@ -119,7 +123,9 @@ function initializePhysics() {
                 };
             }
             
-            this.currentMotorTorque = Math.max(-this.motorStrength, Math.min(this.motorStrength, motorTorque));
+            // Scale motor torque by the configurable range, then clamp to motor strength
+            const scaledTorque = motorTorque * this.motorTorqueRange;
+            this.currentMotorTorque = Math.max(-this.motorStrength, Math.min(this.motorStrength, scaledTorque));
             
             this._updatePhysics();
             this.state.angle = this._normalizeAngle(this.state.angle);
@@ -127,7 +133,7 @@ function initializePhysics() {
             const reward = this._calculateReward();
             this.totalReward += reward;
             
-            const done = this.state.hasFailed();
+            const done = this.state.hasFailed(this.maxAngle);
             this.stepCount++;
             
             return {
@@ -169,17 +175,16 @@ function initializePhysics() {
         
         _calculateReward() {
             if (this.rewardType === 'simple') {
-                if (this.state.hasFailed()) {
+                if (this.state.hasFailed(this.maxAngle)) {
                     return 0.0;
                 }
                 return 1.0;
             } else {
-                if (this.state.hasFailed()) {
+                if (this.state.hasFailed(this.maxAngle)) {
                     return -10.0;
                 }
                 const angleError = Math.abs(this.state.angle);
-                const maxAngle = Math.PI / 3;
-                return 1.0 - (angleError / maxAngle);
+                return 1.0 - (angleError / this.maxAngle);
             }
         }
         
@@ -191,6 +196,10 @@ function initializePhysics() {
         
         getState() {
             return this.state.clone();
+        }
+        
+        getNormalizedInputs() {
+            return this.state.getNormalizedInputs(this.maxAngle);
         }
         
         getStats() {
@@ -329,7 +338,7 @@ function runEpisode(params) {
     let previousReward = 0;
     
     while (stepCount < maxSteps) {
-        const currentState = robot.getState().getNormalizedInputs();
+        const currentState = robot.getNormalizedInputs();
         
         // Select action using neural network
         let actionIndex;
@@ -375,7 +384,7 @@ function runEpisode(params) {
                 state: Array.from(currentState),
                 action: actionIndex,
                 reward: result.reward,
-                nextState: Array.from(result.state.getNormalizedInputs()),
+                nextState: Array.from(result.state.getNormalizedInputs(robot.maxAngle)),
                 done: true
             });
             break;

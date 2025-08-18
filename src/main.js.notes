@@ -1,0 +1,38 @@
+File: main.js
+Purpose: Main entry point for Two-Wheel Balancing Robot RL Web Application with WebGPU acceleration
+
+Recent Changes:
+- Removed redundant manual UI updates from slider event handlers:
+  * Removed manual textContent updates from all sliders that call setParameter()
+  * setParameter() now handles all display updates via updateAllDisplays()
+  * Kept manual updates for sliders that don't use setParameter() (debug speed, layer configs)
+  * Eliminates redundancy and prevents potential UI update conflicts
+- Fixed inverted pendulum control direction in PD controller:
+  * Removed negative sign from getPhysicsDemoTorque() torque calculation
+  * Now properly moves in same direction as tilt (positive angle → positive torque → move right)
+  * Verified training action mapping remains correct: [-3.0, 0.0, 3.0] for left/brake/right
+- Added wheel friction controls and physics integration:
+  * Added wheelFriction parameter to UIControls with validation range 0.0-1.0
+  * Added wheel friction slider event handling in setupSliderControls()
+  * Added wheel friction display updates in updateAllDisplays()
+  * Added updateWheelFriction() method to TwoWheelBotRL class
+
+Key Components:
+- UIControls: Parameter management and validation with slider controls
+- TwoWheelBotRL: Main application class managing all components
+- Performance chart integration for real-time training visualization
+- Comprehensive demo mode system: physics, training, evaluation, manual
+
+Dependencies:
+- visualization/Renderer.js: 2D Canvas rendering
+- visualization/Charts.js: Performance metrics visualization
+- physics/BalancingRobot.js: Robot physics simulation
+- training/QLearning.js: Reinforcement learning algorithm
+- network/WebGPUBackend.js: GPU-accelerated neural networks
+
+Architecture Notes:
+- Modular design with clear separation of concerns
+- WebGPU backend with CPU fallback for maximum compatibility
+- Real-time simulation loop with configurable physics timestep
+- Responsive UI with parameter validation and status indicators
+- Chart integration provides visual feedback for training progress

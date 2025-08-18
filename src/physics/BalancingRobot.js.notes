@@ -1,0 +1,25 @@
+File: BalancingRobot.js
+Purpose: Physics simulation for two-wheel balancing robot with realistic wheel dynamics
+
+Recent Changes:
+- Updated default wheel radius from 0.08m to 0.12m for better visual proportions
+- Expanded wheel radius validation range to 0.02-0.20m to support larger wheels
+- Simplified wheel physics with direct coupling to prevent slip issues
+- Replaced complex slip calculation with straightforward motor force transmission
+- Improved wheel rotation to exactly match linear movement with no slip
+
+Key Components:
+- RobotState: Complete state representation including wheel rotation
+- BalancingRobot: Main physics simulation with configurable wheel properties
+- _updatePhysics(): Enhanced with proper rolling motion calculations
+
+Dependencies:
+- visualization/Renderer.js: Uses wheelAngle and wheelRadius for accurate visualization
+- main.js: Configuration updates through updateConfig method
+
+Architecture Notes:
+- Simplified wheel physics with direct motor force coupling for visual clarity
+- Perfect rolling motion: wheel rotation exactly matches linear movement
+- Wheel angle normalized to prevent numerical overflow in long simulations
+- Larger default wheel size (12cm radius) for better robot proportions
+- Supports wide range of wheel sizes up to 20cm through configurable parameters

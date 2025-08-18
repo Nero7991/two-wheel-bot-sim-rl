@@ -40,11 +40,12 @@ export class RobotState {
 
     /**
      * Get normalized state for neural network input
+     * @param {number} maxAngle - Maximum angle for normalization (passed from robot instance)
      * @returns {Float32Array} [normalizedAngle, normalizedAngularVelocity]
      */
-    getNormalizedInputs() {
-        // Normalize angle to [-1, 1] range (assuming max angle is π/3) and clamp
-        const normalizedAngle = Math.max(-1, Math.min(1, this.angle / (Math.PI / 3)));
+    getNormalizedInputs(maxAngle = Math.PI / 3) {
+        // Normalize angle to [-1, 1] range using configurable max angle and clamp
+        const normalizedAngle = Math.max(-1, Math.min(1, this.angle / maxAngle));
         // Normalize angular velocity to [-1, 1] range (assuming max is 10 rad/s) and clamp
         const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.angularVelocity / 10));
         
@@ -53,10 +54,11 @@ export class RobotState {
 
     /**
      * Check if the robot has failed (fallen over)
+     * @param {number} maxAngle - Maximum angle before failure (passed from robot instance)
      * @returns {boolean} True if robot has fallen
      */
-    hasFailed() {
-        return Math.abs(this.angle) > Math.PI / 3; // 60 degrees
+    hasFailed(maxAngle = Math.PI / 3) {
+        return Math.abs(this.angle) > maxAngle;
     }
 }
 
@@ -69,22 +71,28 @@ export class BalancingRobot {
      * @param {Object} config - Robot configuration parameters
      * @param {number} config.mass - Robot mass in kg (0.5 - 3.0, default: 1.0)
      * @param {number} config.centerOfMassHeight - Height of center of mass in meters (0.2 - 1.0, default: 0.5)
-     * @param {number} config.motorStrength - Maximum motor torque in N⋅m (2 - 10, default: 5)
+     * @param {number} config.motorStrength - Maximum motor torque in N⋅m (2 - 20, default: 5)
      * @param {number} config.friction - Friction coefficient (0 - 1, default: 0.1)
      * @param {number} config.damping - Angular damping coefficient (0 - 1, default: 0.05)
      * @param {number} config.timestep - Physics timestep in seconds (default: 0.02 = 20ms)
+     * @param {number} config.maxAngle - Maximum tilt angle before failure in radians (0.5 - 2.0, default: π/3 ≈ 1.047)
+     * @param {number} config.motorTorqueRange - Motor torque action range in N⋅m (0.5 - 10.0, default: 1.0)
      */
     constructor(config = {}) {
         // Validate and set parameters with defaults
         this.mass = this._validateParameter(config.mass, 1.0, 0.5, 3.0, 'mass');
         this.centerOfMassHeight = this._validateParameter(config.centerOfMassHeight, 0.4, 0.2, 1.0, 'centerOfMassHeight');
-        this.motorStrength = this._validateParameter(config.motorStrength, 5.0, 2.0, 10.0, 'motorStrength');
+        this.motorStrength = this._validateParameter(config.motorStrength, 5.0, 2.0, 20.0, 'motorStrength');
         this.friction = this._validateParameter(config.friction, 0.02, 0.0, 1.0, 'friction');
         this.damping = this._validateParameter(config.damping, 0.01, 0.0, 1.0, 'damping');
         this.timestep = this._validateParameter(config.timestep, 0.02, 0.001, 0.1, 'timestep');
         this.wheelRadius = this._validateParameter(config.wheelRadius, 0.12, 0.02, 0.20, 'wheelRadius');
         this.wheelMass = this._validateParameter(config.wheelMass, 0.2, 0.1, 1.0, 'wheelMass');
         this.wheelFriction = this._validateParameter(config.wheelFriction, 0.3, 0.0, 1.0, 'wheelFriction');
+        
+        // Configurable angle and motor limits
+        this.maxAngle = this._validateParameter(config.maxAngle, Math.PI / 3, 0.5, 2.0, 'maxAngle'); // Default 60 degrees
+        this.motorTorqueRange = this._validateParameter(config.motorTorqueRange, 1.0, 0.5, 10.0, 'motorTorqueRange'); // Default ±1.0 Nm
         
         // Reward function type: 'simple' (CartPole-style) or 'complex' (angle-proportional)
         this.rewardType = config.rewardType || 'simple';
@@ -152,7 +160,7 @@ export class BalancingRobot {
      */
     step(motorTorque) {
         // Check if robot has already failed before physics update
-        if (this.state.hasFailed()) {
+        if (this.state.hasFailed(this.maxAngle)) {
             return {
                 state: this.state.clone(),
                 reward: this.rewardType === 'simple' ? 0.0 : -10.0,
@@ -160,8 +168,9 @@ export class BalancingRobot {
             };
         }
 
-        // Clamp motor torque to valid range
-        this.currentMotorTorque = Math.max(-this.motorStrength, Math.min(this.motorStrength, motorTorque));
+        // Scale motor torque by the configurable range, then clamp to motor strength
+        const scaledTorque = motorTorque * this.motorTorqueRange;
+        this.currentMotorTorque = Math.max(-this.motorStrength, Math.min(this.motorStrength, scaledTorque));
 
         // Store previous state for reward calculation
         const prevState = this.state.clone();
@@ -177,7 +186,7 @@ export class BalancingRobot {
         this.totalReward += reward;
 
         // Check if episode is done after physics update
-        const done = this.state.hasFailed();
+        const done = this.state.hasFailed(this.maxAngle);
 
         this.stepCount++;
 
@@ -250,21 +259,20 @@ export class BalancingRobot {
         if (this.rewardType === 'simple') {
             // CARTPOLE-STYLE REWARD: Binary reward
             // Robot is upright = +1, Robot falls = 0
-            if (this.state.hasFailed()) {
+            if (this.state.hasFailed(this.maxAngle)) {
                 return 0.0; // No reward for falling
             }
             return 1.0; // Reward for staying upright
         } else {
             // COMPLEX REWARD: Angle-proportional reward with failure penalty
-            if (this.state.hasFailed()) {
+            if (this.state.hasFailed(this.maxAngle)) {
                 return -10.0; // Penalty for falling in complex mode
             }
             
             const angleError = Math.abs(this.state.angle);
-            const maxAngle = Math.PI / 3; // 60 degrees before failure
             
             // Proportional reward: 1.0 when upright, 0.0 when at failure angle
-            const uprightReward = 1.0 - (angleError / maxAngle);
+            const uprightReward = 1.0 - (angleError / this.maxAngle);
             
             return uprightReward;
         }
@@ -289,6 +297,14 @@ export class BalancingRobot {
     }
 
     /**
+     * Get normalized inputs for neural network
+     * @returns {Float32Array} Normalized state inputs
+     */
+    getNormalizedInputs() {
+        return this.state.getNormalizedInputs(this.maxAngle);
+    }
+
+    /**
      * Get robot configuration parameters
      * @returns {Object} Configuration object
      */
@@ -303,7 +319,9 @@ export class BalancingRobot {
             wheelRadius: this.wheelRadius,
             wheelMass: this.wheelMass,
             wheelFriction: this.wheelFriction,
-            rewardType: this.rewardType
+            rewardType: this.rewardType,
+            maxAngle: this.maxAngle,
+            motorTorqueRange: this.motorTorqueRange
         };
     }
 
@@ -323,7 +341,7 @@ export class BalancingRobot {
             this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight;
         }
         if (config.motorStrength !== undefined) {
-            this.motorStrength = this._validateParameter(config.motorStrength, this.motorStrength, 2.0, 10.0, 'motorStrength');
+            this.motorStrength = this._validateParameter(config.motorStrength, this.motorStrength, 2.0, 20.0, 'motorStrength');
         }
         if (config.friction !== undefined) {
             this.friction = this._validateParameter(config.friction, this.friction, 0.0, 1.0, 'friction');
@@ -344,6 +362,12 @@ export class BalancingRobot {
         }
         if (config.wheelFriction !== undefined) {
             this.wheelFriction = this._validateParameter(config.wheelFriction, this.wheelFriction, 0.0, 1.0, 'wheelFriction');
+        }
+        if (config.maxAngle !== undefined) {
+            this.maxAngle = this._validateParameter(config.maxAngle, this.maxAngle, 0.5, 2.0, 'maxAngle');
+        }
+        if (config.motorTorqueRange !== undefined) {
+            this.motorTorqueRange = this._validateParameter(config.motorTorqueRange, this.motorTorqueRange, 0.5, 10.0, 'motorTorqueRange');
         }
         
         console.log('Robot configuration updated:', this.getConfig());

@@ -48,7 +48,9 @@ class UIControls {
             robotMass: 1.0,
             robotHeight: 0.4,
             motorStrength: 5.0,
-            wheelFriction: 0.3
+            wheelFriction: 0.3,
+            maxAngle: Math.PI / 3, // 60 degrees
+            motorTorqueRange: 1.0
         };
         
         // Network architecture configuration
@@ -73,8 +75,10 @@ class UIControls {
             maxStepsPerEpisode: { min: 50, max: 5000 },
             robotMass: { min: 0.5, max: 3.0 },
             robotHeight: { min: 0.2, max: 0.8 },
-            motorStrength: { min: 1.0, max: 10.0 },
-            wheelFriction: { min: 0.0, max: 1.0 }
+            motorStrength: { min: 1.0, max: 20.0 },
+            wheelFriction: { min: 0.0, max: 1.0 },
+            maxAngle: { min: 0.5, max: 2.0 }, // 28.6 to 114.6 degrees
+            motorTorqueRange: { min: 0.5, max: 10.0 }
         };
         
         this.loadParameters();
@@ -263,6 +267,30 @@ class UIControls {
                 const value = parseFloat(e.target.value);
                 this.setParameter('wheelFriction', value);
                 this.app.updateWheelFriction(value);
+            });
+        }
+        
+        // Max angle control
+        const maxAngleSlider = document.getElementById('max-angle');
+        const maxAngleValue = document.getElementById('max-angle-value');
+        
+        if (maxAngleSlider) {
+            maxAngleSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.setParameter('maxAngle', value);
+                this.app.updateMaxAngle(value);
+            });
+        }
+        
+        // Motor torque range control
+        const motorTorqueRangeSlider = document.getElementById('motor-torque-range');
+        const motorTorqueRangeValue = document.getElementById('motor-torque-range-value');
+        
+        if (motorTorqueRangeSlider) {
+            motorTorqueRangeSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.setParameter('motorTorqueRange', value);
+                this.app.updateMotorTorqueRange(value);
             });
         }
     }
@@ -583,6 +611,16 @@ class UIControls {
         if (document.getElementById('wheel-friction')) {
             document.getElementById('wheel-friction').value = this.parameters.wheelFriction;
             document.getElementById('wheel-friction-value').textContent = this.parameters.wheelFriction.toFixed(2);
+        }
+        
+        if (document.getElementById('max-angle')) {
+            document.getElementById('max-angle').value = this.parameters.maxAngle;
+            document.getElementById('max-angle-value').textContent = `${(this.parameters.maxAngle * 180 / Math.PI).toFixed(1)}°`;
+        }
+        
+        if (document.getElementById('motor-torque-range')) {
+            document.getElementById('motor-torque-range').value = this.parameters.motorTorqueRange;
+            document.getElementById('motor-torque-range-value').textContent = `±${this.parameters.motorTorqueRange.toFixed(1)} Nm`;
         }
     }
     
@@ -1923,7 +1961,9 @@ class TwoWheelBotRL {
             motorStrength: uiControls.getParameter('motorStrength'),
             friction: 0.1,
             damping: 0.05,
-            timestep: adjustedTimestep
+            timestep: adjustedTimestep,
+            maxAngle: uiControls.getParameter('maxAngle'),
+            motorTorqueRange: uiControls.getParameter('motorTorqueRange')
         });
         
         // Reset robot to initial state
@@ -2648,6 +2688,24 @@ class TwoWheelBotRL {
             config.wheelFriction = friction;
             this.robot.updateConfig(config);
             console.log(`Wheel friction updated to ${friction}`);
+        }
+    }
+    
+    updateMaxAngle(angle) {
+        if (this.robot) {
+            const config = this.robot.getConfig();
+            config.maxAngle = angle;
+            this.robot.updateConfig(config);
+            console.log(`Max angle updated to ${angle} rad (${(angle * 180 / Math.PI).toFixed(1)} degrees)`);
+        }
+    }
+    
+    updateMotorTorqueRange(range) {
+        if (this.robot) {
+            const config = this.robot.getConfig();
+            config.motorTorqueRange = range;
+            this.robot.updateConfig(config);
+            console.log(`Motor torque range updated to ±${range} Nm`);
         }
     }
     
