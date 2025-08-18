@@ -356,8 +356,12 @@ export class QLearning {
      */
     _updateEpsilon() {
         if (this.globalStepCount < this.hyperparams.epsilonDecay) {
-            // Linear interpolation from epsilon start to epsilon end
-            const epsilonStart = 0.9;
+            // Linear interpolation from initial epsilon to epsilon min
+            // Use the initial epsilon value that was set when training started
+            if (!this.initialEpsilon) {
+                this.initialEpsilon = this.hyperparams.epsilon; // Store initial epsilon on first call
+            }
+            const epsilonStart = this.initialEpsilon;
             const epsilonEnd = this.hyperparams.epsilonMin;
             const fraction = this.globalStepCount / this.hyperparams.epsilonDecay;
             this.hyperparams.epsilon = epsilonStart + fraction * (epsilonEnd - epsilonStart);
@@ -859,9 +863,11 @@ export class QLearning {
         this.replayBuffer.clear();
         this.episode = 0;
         this.stepCount = 0;
+        this.globalStepCount = 0; // Reset global step counter for epsilon decay
         this.lastTargetUpdate = 0;
         this.consecutiveMaxEpisodes = 0;
         this.trainingCompleted = false;
+        this.initialEpsilon = null; // Reset initial epsilon so new training uses current slider value
         
         if (this.isInitialized) {
             this.qNetwork.resetWeights();

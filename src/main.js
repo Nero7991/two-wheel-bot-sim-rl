@@ -13,6 +13,8 @@ import { NetworkPresets, getPreset, createCustomArchitecture } from './network/N
 import { createDefaultRobot } from './physics/BalancingRobot.js';
 import { createDefaultQLearning } from './training/QLearning.js';
 import { WebGPUBackend, checkWebGPUAvailability } from './network/WebGPUBackend.js';
+import { SystemCapabilities, ParallelQLearning } from './training/ParallelTraining.js';
+import { TrainingPerformanceTracker, SmartRenderingManager } from './training/PerformanceTracker.js';
 
 // Module imports (will be implemented in subsequent phases)
 // import { ModelExporter } from './export/ModelExporter.js';
@@ -26,8 +28,23 @@ class UIControls {
         this.parameters = {
             trainingSpeed: 1.0,
             hiddenNeurons: 8,
-            learningRate: 0.001,
-            epsilon: 0.3,
+            
+            // Core Learning Parameters
+            learningRate: 0.0003,
+            gamma: 0.99,
+            
+            // Exploration Parameters
+            epsilon: 0.9,
+            epsilonMin: 0.01,
+            epsilonDecay: 2500,
+            
+            // Training Parameters
+            batchSize: 128,
+            targetUpdateFreq: 100,
+            maxEpisodes: 1000,
+            maxStepsPerEpisode: 1000,
+            
+            // Robot Physics Parameters
             robotMass: 1.0,
             robotHeight: 0.4,
             motorStrength: 5.0,
@@ -43,10 +60,17 @@ class UIControls {
         
         // Parameter validation ranges
         this.validationRanges = {
-            trainingSpeed: { min: 0.1, max: 100.0 },
+            trainingSpeed: { min: 0.1, max: 1000.0 },
             hiddenNeurons: { min: 4, max: 16 },
             learningRate: { min: 0.0001, max: 0.01 },
+            gamma: { min: 0.8, max: 0.999 },
             epsilon: { min: 0.0, max: 1.0 },
+            epsilonMin: { min: 0.0, max: 0.1 },
+            epsilonDecay: { min: 1000, max: 10000 },
+            batchSize: { min: 4, max: 512 },
+            targetUpdateFreq: { min: 10, max: 1000 },
+            maxEpisodes: { min: 100, max: 10000 },
+            maxStepsPerEpisode: { min: 50, max: 5000 },
             robotMass: { min: 0.5, max: 3.0 },
             robotHeight: { min: 0.2, max: 0.8 },
             motorStrength: { min: 1.0, max: 10.0 },
@@ -71,7 +95,6 @@ class UIControls {
         trainingSpeedSlider.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             this.setParameter('trainingSpeed', value);
-            trainingSpeedValue.textContent = `${value.toFixed(1)}x`;
             this.app.setTrainingSpeed(value);
         });
         
@@ -85,8 +108,17 @@ class UIControls {
         document.getElementById('speed-10x').addEventListener('click', () => {
             this.setSpeedPreset(10.0);
         });
+        document.getElementById('speed-50x').addEventListener('click', () => {
+            this.setSpeedPreset(50.0);
+        });
         document.getElementById('speed-100x').addEventListener('click', () => {
             this.setSpeedPreset(100.0);
+        });
+        document.getElementById('speed-200x').addEventListener('click', () => {
+            this.setSpeedPreset(200.0);
+        });
+        document.getElementById('speed-1000x').addEventListener('click', () => {
+            this.setSpeedPreset(1000.0);
         });
         
         // Debug speed control for manual testing
@@ -109,7 +141,6 @@ class UIControls {
         learningRateSlider.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             this.setParameter('learningRate', value);
-            learningRateValue.textContent = value.toFixed(4);
             this.app.updateLearningRate(value);
         });
         
@@ -120,8 +151,77 @@ class UIControls {
         epsilonSlider.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             this.setParameter('epsilon', value);
-            epsilonValue.textContent = value.toFixed(2);
             this.app.updateEpsilon(value);
+        });
+        
+        // Gamma control
+        const gammaSlider = document.getElementById('gamma');
+        const gammaValue = document.getElementById('gamma-value');
+        
+        gammaSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('gamma', value);
+            this.app.updateGamma(value);
+        });
+        
+        // Epsilon Min control
+        const epsilonMinSlider = document.getElementById('epsilon-min');
+        const epsilonMinValue = document.getElementById('epsilon-min-value');
+        
+        epsilonMinSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.setParameter('epsilonMin', value);
+            this.app.updateEpsilonMin(value);
+        });
+        
+        // Epsilon Decay control
+        const epsilonDecaySlider = document.getElementById('epsilon-decay');
+        const epsilonDecayValue = document.getElementById('epsilon-decay-value');
+        
+        epsilonDecaySlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            this.setParameter('epsilonDecay', value);
+            this.app.updateEpsilonDecay(value);
+        });
+        
+        // Batch Size control
+        const batchSizeSlider = document.getElementById('batch-size');
+        const batchSizeValue = document.getElementById('batch-size-value');
+        
+        batchSizeSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            this.setParameter('batchSize', value);
+            this.app.updateBatchSize(value);
+        });
+        
+        // Target Update Frequency control
+        const targetUpdateFreqSlider = document.getElementById('target-update-freq');
+        const targetUpdateFreqValue = document.getElementById('target-update-freq-value');
+        
+        targetUpdateFreqSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            this.setParameter('targetUpdateFreq', value);
+            this.app.updateTargetUpdateFreq(value);
+        });
+        
+        // Max Episodes control
+        const maxEpisodesSlider = document.getElementById('max-episodes');
+        const maxEpisodesValue = document.getElementById('max-episodes-value');
+        
+        maxEpisodesSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            this.setParameter('maxEpisodes', value);
+            this.app.updateMaxEpisodes(value);
+        });
+        
+        // Max Steps Per Episode control
+        const maxStepsPerEpisodeSlider = document.getElementById('max-steps-per-episode');
+        const maxStepsPerEpisodeValue = document.getElementById('max-steps-per-episode-value');
+        
+        maxStepsPerEpisodeSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            this.setParameter('maxStepsPerEpisode', value);
+            this.app.updateMaxStepsPerEpisode(value);
         });
         
         // Robot mass control
@@ -131,7 +231,6 @@ class UIControls {
         robotMassSlider.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             this.setParameter('robotMass', value);
-            robotMassValue.textContent = `${value.toFixed(1)} kg`;
             this.app.updateRobotMass(value);
         });
         
@@ -142,7 +241,6 @@ class UIControls {
         robotHeightSlider.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             this.setParameter('robotHeight', value);
-            robotHeightValue.textContent = `${value.toFixed(2)} m`;
             this.app.updateRobotHeight(value);
         });
         
@@ -153,7 +251,6 @@ class UIControls {
         motorStrengthSlider.addEventListener('input', (e) => {
             const value = parseFloat(e.target.value);
             this.setParameter('motorStrength', value);
-            motorStrengthValue.textContent = `${value.toFixed(1)} Nm`;
             this.app.updateMotorStrength(value);
         });
         
@@ -165,7 +262,6 @@ class UIControls {
             wheelFrictionSlider.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
                 this.setParameter('wheelFriction', value);
-                wheelFrictionValue.textContent = value.toFixed(2);
                 this.app.updateWheelFriction(value);
             });
         }
@@ -431,6 +527,7 @@ class UIControls {
         
         this.parameters[paramName] = value;
         this.saveParameters();
+        this.updateAllDisplays();
         
         console.log(`Parameter ${paramName} set to ${value}`);
     }
@@ -444,13 +541,35 @@ class UIControls {
         document.getElementById('training-speed').value = this.parameters.trainingSpeed;
         document.getElementById('training-speed-value').textContent = `${this.parameters.trainingSpeed.toFixed(1)}x`;
         
-        // Network configuration is now handled by preset system
-        
+        // Core Learning Parameters
         document.getElementById('learning-rate').value = this.parameters.learningRate;
         document.getElementById('learning-rate-value').textContent = this.parameters.learningRate.toFixed(4);
         
+        document.getElementById('gamma').value = this.parameters.gamma;
+        document.getElementById('gamma-value').textContent = this.parameters.gamma.toFixed(3);
+        
+        // Exploration Parameters
         document.getElementById('epsilon').value = this.parameters.epsilon;
         document.getElementById('epsilon-value').textContent = this.parameters.epsilon.toFixed(2);
+        
+        document.getElementById('epsilon-min').value = this.parameters.epsilonMin;
+        document.getElementById('epsilon-min-value').textContent = this.parameters.epsilonMin.toFixed(3);
+        
+        document.getElementById('epsilon-decay').value = this.parameters.epsilonDecay;
+        document.getElementById('epsilon-decay-value').textContent = this.parameters.epsilonDecay.toString();
+        
+        // Training Parameters  
+        document.getElementById('batch-size').value = this.parameters.batchSize;
+        document.getElementById('batch-size-value').textContent = this.parameters.batchSize.toString();
+        
+        document.getElementById('target-update-freq').value = this.parameters.targetUpdateFreq;
+        document.getElementById('target-update-freq-value').textContent = this.parameters.targetUpdateFreq.toString();
+        
+        document.getElementById('max-episodes').value = this.parameters.maxEpisodes;
+        document.getElementById('max-episodes-value').textContent = this.parameters.maxEpisodes.toString();
+        
+        document.getElementById('max-steps-per-episode').value = this.parameters.maxStepsPerEpisode;
+        document.getElementById('max-steps-per-episode-value').textContent = this.parameters.maxStepsPerEpisode.toString();
         
         document.getElementById('robot-mass').value = this.parameters.robotMass;
         document.getElementById('robot-mass-value').textContent = `${this.parameters.robotMass.toFixed(1)} kg`;
@@ -500,15 +619,118 @@ class UIControls {
         this.parameters = {
             trainingSpeed: 1.0,
             hiddenNeurons: 8,
-            learningRate: 0.001,
-            epsilon: 0.3,
+            
+            // Core Learning Parameters
+            learningRate: 0.0003,
+            gamma: 0.99,
+            
+            // Exploration Parameters
+            epsilon: 0.9,
+            epsilonMin: 0.01,
+            epsilonDecay: 2500,
+            
+            // Training Parameters
+            batchSize: 128,
+            targetUpdateFreq: 100,
+            maxEpisodes: 1000,
+            maxStepsPerEpisode: 1000,
+            
+            // Robot Physics Parameters
             robotMass: 1.0,
             robotHeight: 0.4,
-            motorStrength: 5.0
+            motorStrength: 5.0,
+            wheelFriction: 0.3
         };
         this.updateAllDisplays();
         this.saveParameters();
         console.log('Parameters reset to defaults');
+    }
+    
+    /**
+     * Sync parameters from Q-learning back to UI (for two-way binding)
+     * Call this when parameters change internally (e.g., epsilon decay)
+     */
+    syncParametersFromQLearning() {
+        if (!this.app.qlearning) return;
+        
+        const hyperparams = this.app.qlearning.hyperparams;
+        
+        // Update internal parameters to match Q-learning
+        this.parameters.learningRate = hyperparams.learningRate;
+        this.parameters.gamma = hyperparams.gamma;
+        this.parameters.epsilon = hyperparams.epsilon;
+        this.parameters.epsilonMin = hyperparams.epsilonMin;
+        this.parameters.epsilonDecay = hyperparams.epsilonDecay;
+        this.parameters.batchSize = hyperparams.batchSize;
+        this.parameters.targetUpdateFreq = hyperparams.targetUpdateFreq;
+        this.parameters.maxEpisodes = hyperparams.maxEpisodes;
+        this.parameters.maxStepsPerEpisode = hyperparams.maxStepsPerEpisode;
+        
+        // Update UI elements to reflect changes
+        this.updateParameterDisplays([
+            'epsilon', 'gamma', 'learningRate', 'epsilonMin', 'epsilonDecay',
+            'batchSize', 'targetUpdateFreq', 'maxEpisodes', 'maxStepsPerEpisode'
+        ]);
+    }
+    
+    /**
+     * Update specific parameter displays (more efficient than updateAllDisplays)
+     */
+    updateParameterDisplays(paramNames) {
+        paramNames.forEach(paramName => {
+            const elementId = this.getElementIdForParameter(paramName);
+            const valueId = `${elementId}-value`;
+            
+            const element = document.getElementById(elementId);
+            const valueElement = document.getElementById(valueId);
+            
+            if (element && valueElement) {
+                element.value = this.parameters[paramName];
+                valueElement.textContent = this.formatParameterValue(paramName, this.parameters[paramName]);
+            }
+        });
+    }
+    
+    /**
+     * Get HTML element ID for a parameter name
+     */
+    getElementIdForParameter(paramName) {
+        const mapping = {
+            'learningRate': 'learning-rate',
+            'gamma': 'gamma',
+            'epsilon': 'epsilon',
+            'epsilonMin': 'epsilon-min',
+            'epsilonDecay': 'epsilon-decay',
+            'batchSize': 'batch-size',
+            'targetUpdateFreq': 'target-update-freq',
+            'maxEpisodes': 'max-episodes',
+            'maxStepsPerEpisode': 'max-steps-per-episode'
+        };
+        return mapping[paramName] || paramName;
+    }
+    
+    /**
+     * Format parameter value for display
+     */
+    formatParameterValue(paramName, value) {
+        switch (paramName) {
+            case 'learningRate':
+                return value.toFixed(4);
+            case 'gamma':
+                return value.toFixed(3);
+            case 'epsilon':
+                return value.toFixed(2);
+            case 'epsilonMin':
+                return value.toFixed(3);
+            case 'epsilonDecay':
+            case 'batchSize':
+            case 'targetUpdateFreq':
+            case 'maxEpisodes':
+            case 'maxStepsPerEpisode':
+                return value.toString();
+            default:
+                return value.toString();
+        }
     }
 }
 
@@ -524,6 +746,17 @@ class TwoWheelBotRL {
         this.qlearning = null;
         this.uiControls = null;
         this.performanceCharts = null;
+        
+        // Parallel training
+        this.systemCapabilities = null;
+        this.parallelQLearning = null;
+        
+        // Performance tracking
+        this.performanceTracker = new TrainingPerformanceTracker();
+        this.smartRenderingManager = new SmartRenderingManager(this.performanceTracker, {
+            targetFPS: 60,
+            mode: 'interval' // Use setInterval for consistent 60 FPS
+        });
         
         // Application state
         this.isTraining = false;
@@ -560,6 +793,9 @@ class TwoWheelBotRL {
             upPressed: false,
             manualTorque: 0
         };
+        
+        // Simulation loop management
+        this.simulationInterval = null;
         
         // PD controller toggle state
         this.pdControllerEnabled = true; // Start enabled in physics mode
@@ -618,8 +854,15 @@ class TwoWheelBotRL {
             this.uiControls = new UIControls(this);
             this.uiControls.initialize();
             
+            // Initialize parallel training system
+            this.systemCapabilities = new SystemCapabilities();
+            console.log(`System capabilities: ${this.systemCapabilities.coreCount} cores, using ${this.systemCapabilities.maxWorkers} workers`);
+            
             // Update WebGPU status display
             this.updateWebGPUStatusDisplay();
+            
+            // Update CPU cores status display
+            this.updateCPUCoresStatusDisplay();
             
             // Start simulation and rendering
             this.startSimulation();
@@ -874,6 +1117,14 @@ class TwoWheelBotRL {
             await this.initializeQLearning();
         }
         
+        // CRITICAL FIX: Read current training speed from UI slider before starting
+        const speedSlider = document.getElementById('training-speed');
+        if (speedSlider) {
+            const currentSpeed = parseFloat(speedSlider.value);
+            this.setTrainingSpeed(currentSpeed);
+            console.log(`Training will start at current slider speed: ${currentSpeed}x`);
+        }
+        
         this.isTraining = true;
         this.isPaused = false;
         this.demoMode = 'training';
@@ -993,68 +1244,181 @@ class TwoWheelBotRL {
     }
 
     startSimulation() {
+        // Clean up any existing simulation loop
+        this.stopSimulation();
+        
         // Start the renderer
         this.renderer.start();
         
-        // Start physics simulation loop
+        // Choose simulation mode based on SmartRenderingManager configuration
+        if (this.smartRenderingManager.renderingMode === 'interval') {
+            this.startHighPerformanceSimulation();
+        } else {
+            this.startDisplaySyncedSimulation();
+        }
+    }
+    
+    stopSimulation() {
+        // Clean up interval-based simulation
+        if (this.simulationInterval) {
+            clearInterval(this.simulationInterval);
+            this.simulationInterval = null;
+            console.log('High-performance simulation stopped');
+        }
+        
+        // Note: RAF-based simulation will naturally stop when requestAnimationFrame stops being called
+    }
+    
+    startDisplaySyncedSimulation() {
+        // Traditional RAF-based simulation (60 FPS max, display-synced)
         const simulate = (timestamp) => {
             if (!this.isInitialized) return;
             
-            // Performance monitoring
-            if (this.lastFrameTime > 0) {
-                const frameTime = timestamp - this.lastFrameTime;
-                this.frameTimeHistory.push(frameTime);
-                
-                // Keep only recent history
-                if (this.frameTimeHistory.length > this.performanceCheckInterval) {
-                    this.frameTimeHistory.shift();
-                }
-                
-                // Auto-adjust training speed if performance is extremely poor (disabled for manual speed control)
-                if (this.frameTimeHistory.length === this.performanceCheckInterval) {
-                    const avgFrameTime = this.frameTimeHistory.reduce((a, b) => a + b) / this.frameTimeHistory.length;
-                    const targetFrameTime = 16.67; // 60 FPS target
-                    
-                    // Only auto-adjust if frame time is extremely poor (>100ms = <10 FPS) and speed is very high
-                    // This prevents unwanted auto-reduction during intentional high-speed training
-                    if (avgFrameTime > 100 && this.targetPhysicsStepsPerFrame > 50) {
-                        this.setTrainingSpeed(Math.max(10.0, this.trainingSpeed * 0.9));
-                        console.warn(`Extremely poor performance (${avgFrameTime.toFixed(1)}ms/frame), reducing training speed to ${this.trainingSpeed.toFixed(1)}x`);
-                    }
-                }
-            }
-            this.lastFrameTime = timestamp;
-            
-            // Update physics at fixed intervals, with debug speed control for manual mode
-            let updateInterval = this.physicsUpdateInterval;
-            if (this.demoMode === 'manual' || this.demoMode === 'physics') {
-                // Apply debug speed: slower speed = longer interval, faster speed = shorter interval
-                updateInterval = this.physicsUpdateInterval / this.debugSpeed;
-            }
-            
-            if (timestamp - this.lastPhysicsUpdate >= updateInterval) {
-                this.updatePhysics();
-                this.updateRenderer();
-                this.updateUI();
-                this.lastPhysicsUpdate = timestamp;
-            }
-            
+            this.runSimulationFrame(timestamp || performance.now());
             requestAnimationFrame(simulate);
         };
         
         requestAnimationFrame(simulate);
-        console.log('Simulation started');
+        console.log('Simulation started (display-synced, ~60 FPS)');
+    }
+    
+    startHighPerformanceSimulation() {
+        // Adaptive high-performance simulation based on training speed
+        const baseTargetInterval = 1000 / this.smartRenderingManager.actualTargetFPS; // 8.33ms for 120 FPS
+        
+        // Adjust interval based on training speed - REMOVE throttling for max performance
+        let adaptedInterval;
+        if (this.trainingSpeed <= 20) {
+            adaptedInterval = baseTargetInterval; // Full 120 FPS for low speeds
+        } else if (this.trainingSpeed <= 100) {
+            adaptedInterval = baseTargetInterval; // Keep 120 FPS for medium speeds too
+        } else {
+            // For very high speeds, run as fast as possible with minimal interval
+            adaptedInterval = 1; // 1ms = ~1000 FPS maximum theoretical rate
+        }
+        
+        let lastTimestamp = performance.now();
+        let simulationCallCount = 0;
+        
+        const simulate = async () => {
+            if (!this.isInitialized) return;
+            
+            const currentTimestamp = performance.now();
+            const actualInterval = currentTimestamp - lastTimestamp;
+            
+            // Log performance every 60 calls to detect interval backup
+            simulationCallCount++;
+            if (simulationCallCount % 60 === 0) {
+                const intervalBackup = actualInterval > (adaptedInterval * 1.5) ? '🚨 BACKUP!' : '✅';
+                console.log(`⏱️  TIMING: ${this.trainingSpeed}x speed | Target: ${adaptedInterval.toFixed(1)}ms | Actual: ${actualInterval.toFixed(1)}ms ${intervalBackup}`);
+            }
+            
+            await this.runSimulationFrame(currentTimestamp);
+            lastTimestamp = currentTimestamp;
+        };
+        
+        // Use adapted interval to prevent backup at high speeds
+        this.simulationInterval = setInterval(simulate, adaptedInterval);
+        console.log(`Simulation started (adaptive, ${(1000/adaptedInterval).toFixed(0)} FPS for ${this.trainingSpeed}x speed)`);
+    }
+    
+    async runSimulationFrame(timestamp) {
+        // Performance monitoring
+        if (this.lastFrameTime > 0) {
+            const frameTime = timestamp - this.lastFrameTime;
+            this.frameTimeHistory.push(frameTime);
+            
+            // Keep only recent history
+            if (this.frameTimeHistory.length > this.performanceCheckInterval) {
+                this.frameTimeHistory.shift();
+            }
+            
+            // Debug performance degradation: log when frame time gets bad
+            if (frameTime > 50 && Math.random() < 0.1) { // 10% chance to log when frame time > 50ms
+                console.warn(`🐌 PERFORMANCE: Frame time ${frameTime.toFixed(1)}ms, History length: ${this.frameTimeHistory.length}, Physics steps: ${this.targetPhysicsStepsPerFrame}`);
+            }
+            
+            // Auto-adjust training speed if performance is extremely poor (disabled for manual speed control)
+            if (this.frameTimeHistory.length === this.performanceCheckInterval) {
+                const avgFrameTime = this.frameTimeHistory.reduce((a, b) => a + b) / this.frameTimeHistory.length;
+                const targetFrameTime = 1000 / this.smartRenderingManager.actualTargetFPS;
+                
+                // Only auto-adjust if frame time is catastrophically poor (>200ms = <5 FPS)
+                // and we're running an extreme number of physics steps, and rendering is active
+                const isRenderingActive = this.smartRenderingManager.shouldRenderFrame(this.trainingSpeed);
+                if (avgFrameTime > 200 && this.targetPhysicsStepsPerFrame > 500 && isRenderingActive) {
+                    this.setTrainingSpeed(Math.max(50.0, this.trainingSpeed * 0.8));
+                    console.warn(`Catastrophic performance (${avgFrameTime.toFixed(1)}ms/frame), reducing training speed to ${this.trainingSpeed.toFixed(1)}x`);
+                }
+            }
+        }
+        this.lastFrameTime = timestamp;
+        
+        // Update physics at appropriate intervals based on mode and training speed
+        let updateInterval;
+        if (this.demoMode === 'manual' || this.demoMode === 'physics' || this.demoMode === 'evaluation') {
+            // For user interaction and evaluation modes, run physics every frame for smooth motion
+            updateInterval = 0; // No throttling - run every frame for smooth visual experience
+        } else if (this.demoMode === 'training' && this.trainingSpeed > 100) {
+            // For high-speed training, run physics as fast as possible
+            updateInterval = 0; // No throttling - run every frame
+        } else {
+            // Normal throttling for low/medium speeds in training mode only
+            updateInterval = this.physicsUpdateInterval;
+        }
+        
+        if (timestamp - this.lastPhysicsUpdate >= updateInterval) {
+            await this.updatePhysics();
+            
+            // Smart rendering - skip rendering during high-speed training
+            const shouldRender = this.smartRenderingManager.shouldRenderFrame(this.trainingSpeed);
+            if (shouldRender) {
+                this.updateRenderer();
+                this.updateUI();
+            }
+            
+            this.lastPhysicsUpdate = timestamp;
+        }
     }
 
-    updatePhysics() {
+    async updatePhysics() {
         if (!this.robot) return;
         
+        const physicsStartTime = performance.now();
+        
         // Run multiple physics steps per frame for training speed control
-        // Limit steps to maintain UI responsiveness during intensive training
-        const maxStepsPerFrame = Math.min(this.targetPhysicsStepsPerFrame, 100);
-        const stepsToRun = this.isTraining && !this.isPaused ? maxStepsPerFrame : 1;
+        // Dynamic step limiting based on training speed and rendering mode
+        let maxStepsPerFrame;
+        if (this.trainingSpeed <= 100) {
+            // For speeds ≤100x, ensure minimum steps for smooth motion (continuous rendering active)
+            maxStepsPerFrame = Math.max(3, this.targetPhysicsStepsPerFrame);
+        } else if (this.trainingSpeed <= 200) {
+            // For moderate high speeds, limit to prevent frame drops during sparse rendering
+            maxStepsPerFrame = Math.min(this.targetPhysicsStepsPerFrame, 500);
+        } else {
+            // For extreme speeds, allow higher limits since rendering is minimal
+            maxStepsPerFrame = Math.min(this.targetPhysicsStepsPerFrame, 1000);
+        }
+        
+        // Use optimized steps for all modes except when explicitly paused
+        const stepsToRun = this.isPaused ? 1 : maxStepsPerFrame;
+        
+        // Profiling variables
+        let robotStepTime = 0;
+        let trainingTime = 0;
+        let yieldTime = 0;
+        let otherTime = 0;
         
         for (let step = 0; step < stepsToRun; step++) {
+            const stepStartTime = performance.now();
+            
+            // Yield control to event loop every 50 steps to prevent blocking
+            if (step > 0 && step % 50 === 0) {
+                const yieldStart = performance.now();
+                await new Promise(resolve => setTimeout(resolve, 0));
+                yieldTime += performance.now() - yieldStart;
+            }
+            
             let motorTorque = 0;
             let actionIndex = 0;
             
@@ -1108,7 +1472,9 @@ class TwoWheelBotRL {
             }
             
             // Step physics simulation
+            const robotStepStart = performance.now();
             const result = this.robot.step(motorTorque);
+            robotStepTime += performance.now() - robotStepStart;
             this.currentReward = result.reward;
             
             // Update debug reward display during manual control modes and evaluation
@@ -1122,7 +1488,11 @@ class TwoWheelBotRL {
                 const nextState = result.state.getNormalizedInputs();
                 
                 // Train on previous experience if we have one
-                if (this.previousState && this.previousAction !== undefined) {
+                // At high speeds, reduce training frequency to prevent bottlenecks
+                const shouldTrain = this._shouldTrainThisStep(step, stepsToRun);
+                
+                if (this.previousState && this.previousAction !== undefined && shouldTrain) {
+                    const trainingStart = performance.now();
                     const loss = this.qlearning.train(
                         this.previousState,      // Previous state
                         this.previousAction,     // Previous action  
@@ -1130,6 +1500,7 @@ class TwoWheelBotRL {
                         nextState,              // Current state (next state)
                         this.previousDone       // ✅ FIXED: Done from previous step
                     );
+                    trainingTime += performance.now() - trainingStart;
                     
                     // Store training loss for metrics with NaN protection
                     this.lastTrainingLoss = isFinite(loss) ? loss : 0;
@@ -1142,7 +1513,7 @@ class TwoWheelBotRL {
                     this.previousReward = result.reward;  // Store current reward for next iteration
                     this.previousDone = result.done;
                 } else {
-                    // Episode ended - train on final experience
+                    // Episode ended - always train on final experience (critical for episode completion)
                     const finalLoss = this.qlearning.train(
                         normalizedState,        // Current state  
                         actionIndex,           // Current action
@@ -1168,12 +1539,21 @@ class TwoWheelBotRL {
                 return; // Exit physics update completely to avoid multiple episode ends
             }
             
+            // CRITICAL: Break out of physics loop if episode ended to prevent infinite loops
+            if (this.episodeEnded) {
+                break; // Exit the multi-step physics loop immediately
+            }
+            
             // Update training step counter
             if (this.isTraining && !this.isPaused) {
                 this.trainingStep++;
                 
-                // Check for episode termination based on step count (8000 steps max)
-                if (this.trainingStep >= 8000 && !this.episodeEnded && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+                // Performance tracking - record step
+                this.performanceTracker.recordStep();
+                
+                // Check for episode termination based on step count (uses dynamic maxStepsPerEpisode)
+                const maxSteps = this.uiControls?.getParameter('maxStepsPerEpisode') || 1000;
+                if (this.trainingStep >= maxSteps && !this.episodeEnded && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
                     console.log(`Episode terminated at step ${this.trainingStep} (reached max steps)`);
                     this.episodeEnded = true;
                     // Create a synthetic "done" result to trigger episode end
@@ -1183,7 +1563,7 @@ class TwoWheelBotRL {
                         done: true
                     };
                     this.handleEpisodeEnd(syntheticResult);
-                    return;
+                    break; // Exit the physics loop immediately
                 }
                 
                 // Check for robot moving off canvas in all modes
@@ -1202,7 +1582,7 @@ class TwoWheelBotRL {
                             done: true
                         };
                         this.handleEpisodeEnd(syntheticResult);
-                        return;
+                        break; // Exit the physics loop immediately
                     } else if (this.demoMode === 'manual' || this.demoMode === 'physics') {
                         // Reset robot to origin for manual/physics modes
                         console.log(`Robot moved off canvas in ${this.demoMode} mode, resetting to origin`);
@@ -1215,6 +1595,13 @@ class TwoWheelBotRL {
                     }
                 }
             }
+        }
+        
+        // Profiling output every 100 physics steps for performance analysis
+        const totalPhysicsTime = performance.now() - physicsStartTime;
+        if (this.trainingSpeed >= 40 && Math.random() < 0.01) { // 1% chance to log at high speeds
+            console.log(`🔍 PROFILING ${this.trainingSpeed}x (${stepsToRun} steps): Total=${totalPhysicsTime.toFixed(1)}ms | Robot=${robotStepTime.toFixed(1)}ms | Training=${trainingTime.toFixed(1)}ms | Yield=${yieldTime.toFixed(1)}ms`);
+            console.log(`⏱️  Per step: Robot=${(robotStepTime/stepsToRun).toFixed(2)}ms | Training=${(trainingTime/stepsToRun).toFixed(2)}ms`);
         }
     }
 
@@ -1249,10 +1636,15 @@ class TwoWheelBotRL {
         document.getElementById('best-score').textContent = `Best Score: ${this.bestScore.toFixed(1)}`;
         document.getElementById('current-reward').textContent = `Current Reward: ${this.currentReward.toFixed(1)}`;
         
-        // Update Q-learning metrics display
+        // Update Q-learning metrics display and sync UI controls
         if (this.qlearning) {
             document.getElementById('epsilon-display').textContent = `Epsilon: ${this.qlearning.hyperparams.epsilon.toFixed(3)}`;
             document.getElementById('consecutive-episodes').textContent = `Consecutive Max Episodes: ${this.qlearning.consecutiveMaxEpisodes}/20`;
+            
+            // Sync UI controls with current Q-learning parameters (especially epsilon after decay)
+            if (this.uiControls) {
+                this.uiControls.syncParametersFromQLearning();
+            }
         }
         
         // Update training loss display
@@ -1348,6 +1740,113 @@ class TwoWheelBotRL {
         console.log('WebGPU status display updated');
     }
     
+    updateCPUCoresStatusDisplay() {
+        const coresInfoElement = document.getElementById('cores-info');
+        const workersInfoElement = document.getElementById('workers-info');
+        const parallelSpeedupElement = document.getElementById('parallel-speedup');
+        
+        if (!this.systemCapabilities) {
+            coresInfoElement.textContent = 'CPU Cores: Not detected';
+            workersInfoElement.textContent = 'Parallel training unavailable';
+            parallelSpeedupElement.textContent = '';
+            return;
+        }
+        
+        // Update core count
+        const coreCount = this.systemCapabilities.coreCount;
+        const targetCores = this.systemCapabilities.targetCores;
+        const maxWorkers = this.systemCapabilities.maxWorkers;
+        
+        coresInfoElement.textContent = `CPU Cores: ${coreCount} detected`;
+        
+        // Update worker information
+        if (maxWorkers > 1) {
+            workersInfoElement.innerHTML = `
+                <div>Using ${targetCores} cores (50% of ${coreCount})</div>
+                <div>Worker threads: ${maxWorkers}</div>
+            `;
+        } else {
+            workersInfoElement.innerHTML = `
+                <div style="color: #ff6666;">Single core detected</div>
+                <div>Parallel training disabled</div>
+            `;
+        }
+        
+        // Update speedup estimate
+        if (this.parallelQLearning) {
+            const perfStats = this.parallelQLearning.getPerformanceStats();
+            if (perfStats.speedupFactor > 1) {
+                parallelSpeedupElement.innerHTML = `
+                    <div>Training speedup: ${perfStats.speedupFactor.toFixed(1)}x</div>
+                    <div>Parallel episodes: ${perfStats.totalParallelEpisodes}</div>
+                `;
+            } else {
+                parallelSpeedupElement.textContent = 'Speedup measurement in progress...';
+            }
+        } else if (maxWorkers > 1) {
+            parallelSpeedupElement.textContent = `Estimated speedup: ${Math.min(maxWorkers, 4).toFixed(1)}x`;
+        } else {
+            parallelSpeedupElement.textContent = 'No parallel acceleration';
+        }
+        
+        console.log('CPU cores status display updated');
+    }
+    
+    /**
+     * Update training performance metrics display
+     */
+    updatePerformanceMetricsDisplay() {
+        const episodesPerMinuteElement = document.getElementById('episodes-per-minute');
+        const stepsPerSecondElement = document.getElementById('steps-per-second');
+        const renderingModeElement = document.getElementById('rendering-mode');
+        const trainingEfficiencyElement = document.getElementById('training-efficiency');
+        
+        if (!this.performanceTracker) {
+            return;
+        }
+        
+        const displayStats = this.performanceTracker.getDisplayStats();
+        
+        // Update performance metrics
+        if (episodesPerMinuteElement) {
+            episodesPerMinuteElement.textContent = `Episodes/min: ${displayStats.episodesPerMinute}`;
+        }
+        
+        if (stepsPerSecondElement) {
+            stepsPerSecondElement.textContent = `Steps/sec: ${displayStats.stepsPerSecond}`;
+        }
+        
+        if (renderingModeElement) {
+            const mode = displayStats.renderingMode;
+            let color = '#ffaa00'; // Default orange
+            
+            if (mode.includes('Full')) {
+                color = '#00ff88'; // Green for full rendering
+            } else if (mode.includes('Sparse')) {
+                color = '#ffaa00'; // Orange for sparse rendering
+            } else if (mode.includes('Minimal')) {
+                color = '#ff6666'; // Red for minimal rendering
+            }
+            
+            renderingModeElement.innerHTML = `<span style="color: ${color}">Rendering: ${mode}</span>`;
+        }
+        
+        if (trainingEfficiencyElement) {
+            const efficiency = parseFloat(displayStats.trainingEfficiency.replace('%', ''));
+            let color = '#00d4ff'; // Default blue
+            
+            if (efficiency >= 80) {
+                color = '#00ff88'; // Green for high efficiency
+            } else if (efficiency >= 50) {
+                color = '#ffaa00'; // Orange for medium efficiency
+            } else if (efficiency > 0) {
+                color = '#ff6666'; // Red for low efficiency
+            }
+            
+            trainingEfficiencyElement.innerHTML = `<span style="color: ${color}">Training efficiency: ${displayStats.trainingEfficiency}</span>`;
+        }
+    }
+    
     /**
      * Update backend performance display
      */
@@ -1405,12 +1904,20 @@ class TwoWheelBotRL {
         const uiControls = new UIControls(this);
         
         // Initialize robot physics with parameters
+        // Scale timestep to account for multiple physics steps per frame
+        // Default timestep of 0.02s is for 1 step per 20ms (50 Hz)
+        // With minimum 3 steps per frame at 60 FPS, we need 0.02/3 = 0.0067s per step
+        const baseTimestep = 0.02; // 20ms timestep for real-time physics
+        const minStepsPerFrame = 3; // Our minimum steps per frame for smooth motion
+        const adjustedTimestep = baseTimestep / minStepsPerFrame;
+        
         this.robot = createDefaultRobot({
             mass: uiControls.getParameter('robotMass'),
             centerOfMassHeight: uiControls.getParameter('robotHeight'),
             motorStrength: uiControls.getParameter('motorStrength'),
             friction: 0.1,
-            damping: 0.05
+            damping: 0.05,
+            timestep: adjustedTimestep
         });
         
         // Reset robot to initial state
@@ -1434,7 +1941,7 @@ class TwoWheelBotRL {
             epsilon: this.uiControls.getParameter('epsilon'),
             epsilonDecay: 0.995,
             maxEpisodes: 1000,
-            maxStepsPerEpisode: 8000,
+            maxStepsPerEpisode: 1000,
             hiddenSize: this.uiControls.getParameter('hiddenNeurons')
         } : {
             learningRate: 0.001,  // Increased now that reward timing is fixed
@@ -1444,7 +1951,7 @@ class TwoWheelBotRL {
             batchSize: 8,         // Larger batch for stability
             targetUpdateFreq: 100, // Standard update frequency
             maxEpisodes: 1000,
-            maxStepsPerEpisode: 8000,
+            maxStepsPerEpisode: 1000,
             hiddenSize: 8
         };
         
@@ -1460,6 +1967,15 @@ class TwoWheelBotRL {
         
         await this.qlearning.initialize();
         console.log('Q-learning initialized with parameters:', params);
+        
+        // Initialize parallel training wrapper
+        if (this.systemCapabilities && this.systemCapabilities.maxWorkers > 1) {
+            this.parallelQLearning = new ParallelQLearning(this.qlearning, this.robot);
+            await this.parallelQLearning.initialize();
+            console.log(`Parallel training initialized with ${this.systemCapabilities.maxWorkers} workers`);
+        } else {
+            console.log('Parallel training disabled (insufficient cores)');
+        }
         
         // Log backend information
         if (this.webgpuBackend) {
@@ -1557,6 +2073,10 @@ class TwoWheelBotRL {
         this.trainingStep = 0;
         this.episodeEnded = false; // Reset episode end flag
         
+        // Performance tracking - start episode
+        this.performanceTracker.startEpisode();
+        this.episodeStartTime = Date.now();
+        
         // Reset Q-learning training state
         this.previousState = null;
         this.previousAction = undefined;
@@ -1581,6 +2101,11 @@ class TwoWheelBotRL {
     handleEpisodeEnd(result) {
         const totalReward = this.robot.getStats().totalReward;
         
+        // Performance tracking - end episode
+        const episodeEndTime = Date.now();
+        const episodeTrainingTime = episodeEndTime - this.episodeStartTime;
+        this.performanceTracker.endEpisode(this.trainingStep, episodeTrainingTime);
+        
         // Update best score
         if (totalReward > this.bestScore) {
             this.bestScore = totalReward;
@@ -1589,10 +2114,54 @@ class TwoWheelBotRL {
         if (this.demoMode === 'training' && this.isTraining) {
             // Only increment episode count during actual training
             this.episodeCount++;
-            console.log(`Episode ${this.episodeCount} completed: Reward=${totalReward.toFixed(2)}, Steps=${this.trainingStep}`);
+            
+            // Performance monitoring for episode completion rate
+            const now = Date.now();
+            if (!this.episodeTimings) {
+                this.episodeTimings = {
+                    lastEpisodeTime: now,
+                    episodeCount: 0,
+                    recentEpisodes: [],
+                    lastLogTime: now
+                };
+            }
+            
+            const timeSinceLastEpisode = now - this.episodeTimings.lastEpisodeTime;
+            this.episodeTimings.recentEpisodes.push(timeSinceLastEpisode);
+            this.episodeTimings.lastEpisodeTime = now;
+            this.episodeTimings.episodeCount++;
+            
+            // Keep only last 10 episodes for rate calculation
+            if (this.episodeTimings.recentEpisodes.length > 10) {
+                this.episodeTimings.recentEpisodes.shift();
+            }
+            
+            // Log performance every 5 episodes for more frequent monitoring
+            if (this.episodeTimings.episodeCount % 5 === 0) {
+                const avgIntervalMs = this.episodeTimings.recentEpisodes.reduce((a, b) => a + b, 0) / this.episodeTimings.recentEpisodes.length;
+                const episodesPerSecond = 1000 / avgIntervalMs;
+                const episodesPerMinute = episodesPerSecond * 60;
+                
+                // Calculate episode duration in seconds
+                const episodeDurationMs = now - this.episodeStartTime;
+                const episodeDurationSec = episodeDurationMs / 1000;
+                
+                console.log(`🔥 PERFORMANCE: ${this.trainingSpeed}x speed → ${episodesPerSecond.toFixed(2)} eps/sec (${episodesPerMinute.toFixed(0)} eps/min)`);
+                console.log(`📊 EPISODE ${this.episodeCount}: Duration=${episodeDurationSec.toFixed(2)}s, Steps=${this.trainingStep}, Reward=${totalReward.toFixed(2)}`);
+                
+                // Check if episode duration is scaling unexpectedly with speed
+                const expectedDuration = 8000 / (50 * this.trainingSpeed); // 8000 steps at 50Hz base rate
+                const durationRatio = episodeDurationSec / expectedDuration;
+                if (durationRatio > 2.0) {
+                    console.warn(`⚠️  SLOW EPISODE: Taking ${durationRatio.toFixed(2)}x longer than expected!`);
+                }
+            }
             
             // Update model display with latest stats
             this.updateTrainingModelDisplay();
+            
+            // Update performance metrics display
+            this.updatePerformanceMetricsDisplay();
             
             // Check for training completion before auto-pause
             if (this.qlearning && this.qlearning.trainingCompleted) {
@@ -1691,12 +2260,47 @@ class TwoWheelBotRL {
     }
     
     /**
+     * Determine if Q-learning training should occur this physics step
+     * Reduces training frequency at high speeds to prevent bottlenecks
+     * @param {number} currentStep - Current step in the physics loop
+     * @param {number} totalSteps - Total steps to run this frame
+     * @returns {boolean} Whether to train this step
+     */
+    _shouldTrainThisStep(currentStep, totalSteps) {
+        // Always train on episode boundaries (handled separately)
+        // For regular steps, use intelligent training frequency based on speed
+        
+        if (totalSteps <= 10) {
+            // Low speed: train every step for maximum learning
+            return true;
+        } else if (totalSteps <= 50) {
+            // Medium speed: train every other step
+            return currentStep % 2 === 0;
+        } else if (totalSteps <= 100) {
+            // High speed: train every 4th step
+            return currentStep % 4 === 0;
+        } else if (totalSteps <= 500) {
+            // Very high speed: train every 10th step
+            return currentStep % 10 === 0;
+        } else {
+            // Extreme speed: train every 20th step
+            return currentStep % 20 === 0;
+        }
+    }
+
+    /**
      * Parameter update methods called by UI controls
      */
     setTrainingSpeed(speed) {
-        this.trainingSpeed = Math.max(0.1, Math.min(100.0, speed));
+        this.trainingSpeed = Math.max(0.1, Math.min(1000.0, speed));
         this.targetPhysicsStepsPerFrame = Math.round(this.trainingSpeed);
         console.log(`Training speed set to ${speed}x (${this.targetPhysicsStepsPerFrame} steps/frame)`);
+        
+        // CRITICAL FIX: Restart simulation with adapted interval for the new speed
+        if (this.isInitialized && this.smartRenderingManager.renderingMode === 'interval') {
+            console.log('Restarting simulation with adapted interval for new speed...');
+            this.startSimulation(); // This will call stopSimulation() and restart with correct interval
+        }
     }
     
     setDebugSpeed(speed) {
@@ -1741,6 +2345,73 @@ class TwoWheelBotRL {
         if (this.qlearning) {
             this.qlearning.hyperparams.epsilon = epsilon;
             console.log(`Epsilon updated to ${epsilon}`);
+        }
+    }
+    
+    updateGamma(gamma) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.gamma = gamma;
+            console.log(`Gamma updated to ${gamma}`);
+        }
+    }
+    
+    updateEpsilonMin(epsilonMin) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.epsilonMin = epsilonMin;
+            console.log(`Epsilon Min updated to ${epsilonMin}`);
+        }
+    }
+    
+    updateEpsilonDecay(epsilonDecay) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.epsilonDecay = epsilonDecay;
+            console.log(`Epsilon Decay updated to ${epsilonDecay} steps`);
+        }
+    }
+    
+    updateBatchSize(batchSize) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.batchSize = batchSize;
+            console.log(`Batch Size updated to ${batchSize}`);
+        }
+    }
+    
+    updateTargetUpdateFreq(targetUpdateFreq) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.targetUpdateFreq = targetUpdateFreq;
+            console.log(`Target Update Frequency updated to ${targetUpdateFreq}`);
+        }
+    }
+    
+    updateMaxEpisodes(maxEpisodes) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.maxEpisodes = maxEpisodes;
+            console.log(`Max Episodes updated to ${maxEpisodes}`);
+        }
+    }
+    
+    updateMaxStepsPerEpisode(maxStepsPerEpisode) {
+        if (this.qlearning) {
+            this.qlearning.hyperparams.maxStepsPerEpisode = maxStepsPerEpisode;
+            console.log(`Max Steps Per Episode updated to ${maxStepsPerEpisode}`);
+            
+            // If currently training and current step count exceeds new limit, end episode
+            if (this.isTraining && !this.isPaused && !this.episodeEnded && 
+                this.trainingStep >= maxStepsPerEpisode && 
+                (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+                console.log(`Episode ending immediately - current step ${this.trainingStep} >= new limit ${maxStepsPerEpisode}`);
+                this.episodeEnded = true;
+                // Trigger episode end on next physics update
+                setTimeout(() => {
+                    if (this.episodeEnded) {
+                        this.handleEpisodeEnd({
+                            state: this.robot.getState(),
+                            reward: this.currentReward,
+                            done: true
+                        });
+                    }
+                }, 0);
+            }
         }
     }
     
@@ -1792,11 +2463,11 @@ class TwoWheelBotRL {
             this.debugLastAction = 'Left+Right (Cancel)';
         } else if (this.manualControl.leftPressed) {
             // Left pressed - negative torque (move left)
-            this.manualControl.manualTorque = -maxTorque * 0.8;
+            this.manualControl.manualTorque = -maxTorque * 0.7;
             this.debugLastAction = 'Left';
         } else if (this.manualControl.rightPressed) {
             // Right pressed - positive torque (move right)  
-            this.manualControl.manualTorque = maxTorque * 0.8;
+            this.manualControl.manualTorque = maxTorque * 0.7;
             this.debugLastAction = 'Right';
         } else {
             // No keys pressed
