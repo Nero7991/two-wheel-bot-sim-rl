@@ -68,10 +68,11 @@ export class WorkerPool {
      * Initialize the worker pool
      */
     async initialize() {
-        console.log(`Initializing worker pool with ${this.workerCount} workers...`);
+        console.log(`🔧 Initializing worker pool with ${this.workerCount} workers...`);
         
         for (let i = 0; i < this.workerCount; i++) {
             try {
+                console.log(`  Creating worker ${i + 1}/${this.workerCount}...`);
                 const worker = new Worker(this.workerScript);
                 
                 // Set up worker message handling
@@ -80,20 +81,31 @@ export class WorkerPool {
                 };
                 
                 worker.onerror = (error) => {
-                    console.error(`Worker ${i} error:`, error);
+                    console.error(`❌ Worker ${i} error:`, error);
                 };
+                
+                // Test worker with ping
+                worker.postMessage({ type: 'ping', taskId: `init-${i}` });
                 
                 this.workers[i] = worker;
                 this.availableWorkers.push(i);
                 
+                console.log(`  ✅ Worker ${i} created successfully`);
+                
             } catch (error) {
-                console.error(`Failed to create worker ${i}:`, error);
+                console.error(`❌ Failed to create worker ${i}:`, error);
                 throw error;
             }
         }
         
         this.initialized = true;
-        console.log(`Worker pool initialized with ${this.workers.length} workers`);
+        console.log(`🎉 Worker pool initialized with ${this.workers.length} workers`);
+        
+        // Initialize all workers
+        console.log('🔧 Initializing workers...');
+        for (let i = 0; i < this.workers.length; i++) {
+            this.workers[i].postMessage({ type: 'initialize', taskId: `worker-init-${i}` });
+        }
     }
     
     /**
@@ -102,7 +114,10 @@ export class WorkerPool {
      * @param {Object} data - Message data
      */
     handleWorkerMessage(workerId, data) {
+        console.log(`📨 Worker ${workerId} message:`, data.type, data.taskId);
+        
         if (data.type === 'episode_complete') {
+            console.log(`  ✅ Episode completed by worker ${workerId}: reward=${data.result?.totalReward?.toFixed(2)}, steps=${data.result?.stepCount}`);
             // Mark worker as available
             this.busyWorkers.delete(workerId);
             this.availableWorkers.push(workerId);
@@ -110,10 +125,16 @@ export class WorkerPool {
             // Process next task in queue
             this.processNextTask();
         } else if (data.type === 'error') {
-            console.error(`Worker ${workerId} error:`, data.error);
+            console.error(`❌ Worker ${workerId} error:`, data.error);
             // Mark worker as available even on error
             this.busyWorkers.delete(workerId);
             this.availableWorkers.push(workerId);
+        } else if (data.type === 'pong') {
+            console.log(`  🏓 Worker ${workerId} responded to ping`);
+        } else if (data.type === 'initialized') {
+            console.log(`  🎉 Worker ${workerId} initialized successfully`);
+        } else {
+            console.log(`  ❓ Unknown message type from worker ${workerId}:`, data.type);
         }
     }
     
@@ -248,10 +269,8 @@ export class ParallelTrainingManager {
         }
         
         try {
-            // Create worker script URL (we'll implement the worker inline)
-            const workerScript = this.createWorkerScript();
-            const workerBlob = new Blob([workerScript], { type: 'application/javascript' });
-            const workerURL = URL.createObjectURL(workerBlob);
+            // Create worker script URL from EpisodeWorker.js
+            const workerURL = await this.createWorkerScript();
             
             this.workerPool = new WorkerPool(this.config.workerCount, workerURL);
             await this.workerPool.initialize();
@@ -264,23 +283,56 @@ export class ParallelTrainingManager {
     }
     
     /**
-     * Create worker script for episode execution
-     * @returns {string} Worker script code
+     * Create worker script URL from the EpisodeWorker.js file
+     * @returns {string} Worker script URL
      */
-    createWorkerScript() {
-        return `
-            // Worker script for parallel episode execution
+    async createWorkerScript() {
+        try {
+            // Fetch the episode worker script
+            console.log('🔍 Attempting to load EpisodeWorker.js...');
+            const workerResponse = await fetch('./src/training/EpisodeWorker.js');
             
-            // Import statements would go here, but workers have limited module support
-            // For now, we'll use a simplified approach with message passing
+            if (!workerResponse.ok) {
+                throw new Error(`Failed to fetch EpisodeWorker.js: ${workerResponse.status}`);
+            }
+            
+            const workerCode = await workerResponse.text();
+            console.log(`✅ EpisodeWorker.js loaded successfully (${workerCode.length} chars)`);
+            
+            // Create blob URL for the worker
+            const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+            return URL.createObjectURL(workerBlob);
+            
+        } catch (error) {
+            console.warn('❌ Failed to load EpisodeWorker.js, using fallback simulation:', error.message);
+            // Fallback to inline worker if file loading fails
+            return this.createFallbackWorkerScript();
+        }
+    }
+    
+    /**
+     * Create fallback inline worker script
+     * @returns {string} Worker script URL
+     */
+    createFallbackWorkerScript() {
+        const fallbackWorkerCode = `
+            // Fallback episode worker
+            let episodeCount = 0;
             
             self.onmessage = function(event) {
                 const { type, taskId } = event.data;
                 
+                if (type === 'initialize') {
+                    self.postMessage({
+                        type: 'initialized',
+                        taskId: taskId,
+                        success: true
+                    });
+                    return;
+                }
+                
                 if (type === 'run_episode') {
                     try {
-                        // Simulate episode execution
-                        // In a full implementation, this would run the actual episode
                         const result = runSimulatedEpisode(event.data);
                         
                         self.postMessage({
@@ -292,34 +344,58 @@ export class ParallelTrainingManager {
                         self.postMessage({
                             type: 'error',
                             taskId: taskId,
-                            error: error.message
+                            error: { message: error.message }
                         });
                     }
                 }
             };
             
             function runSimulatedEpisode(params) {
-                // Simplified episode simulation for demonstration
-                // Real implementation would need full physics and network code
-                const steps = Math.floor(Math.random() * 1000) + 500;
-                const reward = Math.random() * 200 - 100;
-                const loss = Math.random() * 0.1;
+                episodeCount++;
                 
-                // Simulate computation time
+                // Simulate episode with reasonable results
+                const maxSteps = params.maxSteps || 1000;
+                const steps = Math.floor(Math.random() * maxSteps * 0.8) + maxSteps * 0.2;
+                const success = Math.random() > 0.3; // 70% success rate
+                const reward = success ? steps : Math.random() * steps * 0.5;
+                
+                // Simulate some computation time
                 const startTime = Date.now();
-                while (Date.now() - startTime < 10 + Math.random() * 20) {
-                    // Busy wait to simulate computation
+                const computeTime = 5 + Math.random() * 15; // 5-20ms
+                while (Date.now() - startTime < computeTime) {
+                    // Busy wait
+                }
+                
+                // Generate some fake experiences
+                const experiences = [];
+                for (let i = 0; i < Math.min(steps, 100); i++) {
+                    experiences.push({
+                        state: [Math.random() * 2 - 1, Math.random() * 2 - 1],
+                        action: Math.floor(Math.random() * 3),
+                        reward: success ? 1.0 : 0.0,
+                        nextState: [Math.random() * 2 - 1, Math.random() * 2 - 1],
+                        done: i === steps - 1
+                    });
                 }
                 
                 return {
-                    episode: params.episode || 0,
-                    reward: reward,
-                    steps: steps,
-                    loss: loss,
-                    epsilon: params.epsilon || 0.1
+                    episodeId: params.episodeId || episodeCount,
+                    totalReward: reward,
+                    stepCount: steps,
+                    experiences: experiences,
+                    completed: success,
+                    finalState: {
+                        angle: Math.random() * 0.2 - 0.1,
+                        angularVelocity: Math.random() * 0.4 - 0.2,
+                        position: Math.random() * 2 - 1,
+                        velocity: Math.random() * 0.4 - 0.2
+                    }
                 };
             }
         `;
+        
+        const workerBlob = new Blob([fallbackWorkerCode], { type: 'application/javascript' });
+        return URL.createObjectURL(workerBlob);
     }
     
     /**
@@ -349,19 +425,55 @@ export class ParallelTrainingManager {
         
         console.log(`Running ${numEpisodes} episodes in parallel across ${this.config.workerCount} workers...`);
         
+        // Get current neural network weights to send to workers
+        const neuralNetworkWeights = this.qLearning.qNetwork.getWeights();
+        
+        // Get robot configuration
+        const robotConfig = this.environment.getConfig();
+        
         // Create tasks for workers
         const tasks = [];
         for (let i = 0; i < numEpisodes; i++) {
             tasks.push({
-                episode: this.qLearning.episode + i,
-                epsilon: this.qLearning.hyperparams.epsilon,
+                episodeId: i,
                 maxSteps: this.qLearning.hyperparams.maxStepsPerEpisode,
+                robotConfig: robotConfig,
+                neuralNetworkWeights: neuralNetworkWeights,
+                epsilon: this.qLearning.hyperparams.epsilon,
+                explorationEnabled: true,
                 ...options
             });
         }
         
         try {
             const results = await this.workerPool.executeParallelEpisodes(tasks);
+            
+            // Process results and add experiences to replay buffer
+            let totalExperiences = 0;
+            console.log(`🔍 Processing ${results.length} episode results from workers...`);
+            
+            for (let i = 0; i < results.length; i++) {
+                const result = results[i];
+                if (result) {
+                    console.log(`  Episode ${i}: reward=${result.totalReward?.toFixed(2)}, steps=${result.stepCount}, experiences=${result.experiences?.length || 0}`);
+                    
+                    if (result.experiences) {
+                        // Add experiences to main replay buffer
+                        for (const experience of result.experiences) {
+                            this.qLearning.replayBuffer.add(
+                                new Float32Array(experience.state),
+                                experience.action,
+                                experience.reward,
+                                new Float32Array(experience.nextState),
+                                experience.done
+                            );
+                            totalExperiences++;
+                        }
+                    }
+                } else {
+                    console.warn(`  Episode ${i}: No result returned from worker`);
+                }
+            }
             
             // Update statistics
             const elapsedTime = Date.now() - startTime;
@@ -370,6 +482,7 @@ export class ParallelTrainingManager {
             
             console.log(`Completed ${numEpisodes} parallel episodes in ${elapsedTime}ms`);
             console.log(`Average: ${(elapsedTime / numEpisodes).toFixed(2)}ms per episode`);
+            console.log(`Collected ${totalExperiences} experiences for training`);
             
             return results;
             

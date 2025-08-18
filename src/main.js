@@ -2073,6 +2073,199 @@ class TwoWheelBotRL {
     }
     
     /**
+     * Decide whether to run single episode or parallel batch
+     */
+    async startNextEpisodeOrBatch() {
+        // Check if parallel training is available and beneficial
+        const shouldUseParallel = this.shouldUseParallelTraining();
+        
+        if (shouldUseParallel) {
+            await this.runParallelEpisodeBatch();
+        } else {
+            this.startNewEpisode();
+        }
+    }
+    
+    /**
+     * Determine if parallel training should be used
+     */
+    shouldUseParallelTraining() {
+        // Use parallel training if:
+        // 1. Parallel training is available
+        // 2. Training speed is high enough to benefit from parallelization
+        // 3. We're not in the middle of a manual episode
+        
+        if (!this.parallelQLearning || !this.parallelQLearning.parallelManager.parallelEnabled) {
+            return false;
+        }
+        
+        // Use parallel training for speeds >= 100x to get better performance
+        // (Reduced threshold for testing, but high enough to avoid conflicts)
+        if (this.trainingSpeed >= 100) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Run a batch of episodes in parallel
+     */
+    async runParallelEpisodeBatch() {
+        console.log('🚀 Running parallel episode batch...');
+        
+        try {
+            // Determine batch size based on worker configuration
+            const batchSize = this.parallelQLearning.parallelManager.config.batchSize;
+            
+            // Performance tracking - start batch
+            const batchStartTime = Date.now();
+            this.performanceTracker.startEpisode();
+            
+            // Run parallel episodes
+            const results = await this.parallelQLearning.parallelManager.runEpisodes(batchSize);
+            
+            // Process results and update charts for each individual episode
+            let totalReward = 0;
+            let totalSteps = 0;
+            let bestEpisodeReward = -Infinity;
+            
+            console.log(`📊 Processing ${results.length} individual episode results...`);
+            
+            for (let i = 0; i < results.length; i++) {
+                const result = results[i];
+                if (result) {
+                    const episodeReward = result.totalReward || 0;
+                    const episodeSteps = result.stepCount || 0;
+                    
+                    totalReward += episodeReward;
+                    totalSteps += episodeSteps;
+                    
+                    // Track best episode in this batch
+                    if (episodeReward > bestEpisodeReward) {
+                        bestEpisodeReward = episodeReward;
+                    }
+                    
+                    // Update episode count for each completed episode
+                    this.episodeCount++;
+                    
+                    // Update best score if this episode was better
+                    if (episodeReward > this.bestScore) {
+                        this.bestScore = episodeReward;
+                    }
+                    
+                    // Update performance charts for EACH individual episode
+                    if (this.performanceCharts && this.qlearning) {
+                        const balancedState = new Float32Array([0.0, 0.0]);
+                        const qValues = this.qlearning.getAllQValues(balancedState);
+                        const avgQValue = Array.from(qValues).reduce((a, b) => a + b, 0) / qValues.length;
+                        
+                        this.performanceCharts.updateMetrics({
+                            episode: this.episodeCount,
+                            reward: episodeReward, // Individual episode reward
+                            loss: this.lastTrainingLoss || 0,
+                            qValue: avgQValue,
+                            epsilon: this.qlearning.hyperparams.epsilon
+                        });
+                    }
+                    
+                    console.log(`  Episode ${this.episodeCount}: reward=${episodeReward.toFixed(2)}, steps=${episodeSteps}, experiences=${result.experiences?.length || 0}`);
+                    
+                    // Small delay between individual episode updates to make charts visible
+                    await new Promise(resolve => setTimeout(resolve, 2));
+                }
+            }
+            
+            // Train the network on collected experiences
+            let totalTrainingLoss = 0;
+            if (this.qlearning.replayBuffer.size() >= this.qlearning.hyperparams.batchSize) {
+                for (let i = 0; i < batchSize; i++) {
+                    const loss = this.qlearning._trainBatch();
+                    totalTrainingLoss += loss || 0;
+                    
+                    // Yield every few training steps to keep UI responsive
+                    if (i % 2 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                    }
+                }
+                this.lastTrainingLoss = totalTrainingLoss / batchSize;
+            }
+            
+            // Performance tracking - end batch
+            const batchEndTime = Date.now();
+            const batchTrainingTime = batchEndTime - batchStartTime;
+            this.performanceTracker.endEpisode(totalSteps, batchTrainingTime);
+            
+            // Update episode timing statistics (simulate episode completion)
+            const now = Date.now();
+            if (!this.episodeTimings) {
+                this.episodeTimings = {
+                    lastEpisodeTime: now,
+                    episodeCount: 0,
+                    recentEpisodes: [],
+                    lastLogTime: now
+                };
+            }
+            
+            // Add timing for the entire batch (simulating rapid episode completion)
+            const avgEpisodeTime = batchTrainingTime / batchSize;
+            for (let i = 0; i < batchSize; i++) {
+                this.episodeTimings.recentEpisodes.push(avgEpisodeTime);
+                this.episodeTimings.episodeCount++;
+            }
+            this.episodeTimings.lastEpisodeTime = now;
+            
+            // Keep only last 10 episodes for rate calculation
+            while (this.episodeTimings.recentEpisodes.length > 10) {
+                this.episodeTimings.recentEpisodes.shift();
+            }
+            
+            // Calculate and log performance metrics (every 5 episodes)
+            if (this.episodeTimings.episodeCount % 5 === 0) {
+                const avgIntervalMs = this.episodeTimings.recentEpisodes.reduce((a, b) => a + b, 0) / this.episodeTimings.recentEpisodes.length;
+                const episodesPerSecond = 1000 / avgIntervalMs;
+                const episodesPerMinute = episodesPerSecond * 60;
+                const episodeDurationSec = avgIntervalMs / 1000;
+                
+                console.log(`🔥 PARALLEL PERFORMANCE: ${this.trainingSpeed}x speed → ${episodesPerSecond.toFixed(2)} eps/sec (${episodesPerMinute.toFixed(0)} eps/min)`);
+                console.log(`📊 BATCH ${Math.floor(this.episodeCount/batchSize)}: Duration=${(batchTrainingTime/1000).toFixed(2)}s, Episodes=${batchSize}, Best Reward=${bestEpisodeReward.toFixed(2)}`);
+            }
+            
+            // Charts are now updated individually for each episode above
+            // No need for batch-level chart update
+            
+            // Update target network periodically
+            if (this.qlearning.stepCount % this.qlearning.hyperparams.targetUpdateFreq === 0) {
+                this.qlearning.updateTargetNetwork();
+            }
+            
+            // Check for training completion
+            if (this.qlearning && this.qlearning.trainingCompleted) {
+                this.pauseTraining();
+                console.log(`🏆 Training automatically completed during parallel batch!`);
+                return;
+            }
+            
+            // Update statistics for logging
+            const avgReward = totalReward / results.length;
+            const avgSteps = totalSteps / results.length;
+            
+            console.log(`✅ Parallel batch completed: ${results.length} episodes, avg reward: ${avgReward.toFixed(2)}, best: ${bestEpisodeReward.toFixed(2)}, avg steps: ${avgSteps.toFixed(0)}`);
+            
+            // Yield control to UI and continue training after brief pause
+            await new Promise(resolve => setTimeout(resolve, 50)); // Longer pause to allow UI updates
+            
+            if (this.isTraining) {
+                this.startNextEpisodeOrBatch();
+            }
+            
+        } catch (error) {
+            console.warn('Parallel batch failed, falling back to single episode:', error);
+            this.startNewEpisode();
+        }
+    }
+    
+    /**
      * Start a new training episode
      */
     startNewEpisode() {
@@ -2203,7 +2396,7 @@ class TwoWheelBotRL {
             // Start next episode after brief pause
             setTimeout(() => {
                 if (this.isTraining) {
-                    this.startNewEpisode();
+                    this.startNextEpisodeOrBatch();
                 }
             }, 100);
         } else {
