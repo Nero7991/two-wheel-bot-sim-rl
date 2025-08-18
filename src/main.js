@@ -799,6 +799,7 @@ class TwoWheelBotRL {
         // Application state
         this.isTraining = false;
         this.isPaused = false;
+        this.isHybridTraining = false; // Track when running both main thread + workers
         this.trainingStep = 0;
         this.episodeCount = 0;
         this.bestScore = 0;
@@ -1222,6 +1223,7 @@ class TwoWheelBotRL {
     resetEnvironment() {
         this.isTraining = false;
         this.isPaused = false;
+        this.isHybridTraining = false;
         this.trainingStep = 0;
         this.episodeCount = 0;
         this.bestScore = 0;
@@ -2120,8 +2122,12 @@ class TwoWheelBotRL {
         const shouldUseParallel = this.shouldUseParallelTraining();
         
         if (shouldUseParallel) {
-            await this.runParallelEpisodeBatch();
+            // Run both main thread episode (for visual) AND parallel batch (for speed)
+            this.isHybridTraining = true;
+            this.startNewEpisode(); // Start main thread episode for canvas updates
+            this.runParallelEpisodeBatch(); // Run workers in background (don't await)
         } else {
+            this.isHybridTraining = false;
             this.startNewEpisode();
         }
     }
@@ -2158,12 +2164,15 @@ class TwoWheelBotRL {
             // Determine batch size based on worker configuration
             const batchSize = this.parallelQLearning.parallelManager.config.batchSize;
             
+            // In hybrid mode, reduce batch size to avoid overwhelming the main thread
+            const effectiveBatchSize = this.isHybridTraining ? Math.max(1, Math.floor(batchSize / 2)) : batchSize;
+            
             // Performance tracking - start batch
             const batchStartTime = Date.now();
             this.performanceTracker.startEpisode();
             
             // Run parallel episodes
-            const results = await this.parallelQLearning.parallelManager.runEpisodes(batchSize);
+            const results = await this.parallelQLearning.parallelManager.runEpisodes(effectiveBatchSize);
             
             // Process results and update charts for each individual episode
             let totalReward = 0;
@@ -2186,16 +2195,18 @@ class TwoWheelBotRL {
                         bestEpisodeReward = episodeReward;
                     }
                     
-                    // Update episode count for each completed episode
-                    this.episodeCount++;
+                    // In hybrid mode, don't update episode count (main thread handles it)
+                    if (!this.isHybridTraining) {
+                        this.episodeCount++;
+                    }
                     
                     // Update best score if this episode was better
                     if (episodeReward > this.bestScore) {
                         this.bestScore = episodeReward;
                     }
                     
-                    // Update performance charts for EACH individual episode
-                    if (this.performanceCharts && this.qlearning) {
+                    // Update performance charts for EACH individual episode (only if not hybrid)
+                    if (this.performanceCharts && this.qlearning && !this.isHybridTraining) {
                         const balancedState = new Float32Array([0.0, 0.0]);
                         const qValues = this.qlearning.getAllQValues(balancedState);
                         const avgQValue = Array.from(qValues).reduce((a, b) => a + b, 0) / qValues.length;
@@ -2219,16 +2230,20 @@ class TwoWheelBotRL {
             // Train the network on collected experiences
             let totalTrainingLoss = 0;
             if (this.qlearning.replayBuffer.size() >= this.qlearning.hyperparams.batchSize) {
-                for (let i = 0; i < batchSize; i++) {
+                // In hybrid mode, do fewer training steps to avoid interfering with main thread
+                const trainingSteps = this.isHybridTraining ? Math.max(1, Math.floor(effectiveBatchSize / 2)) : effectiveBatchSize;
+                
+                for (let i = 0; i < trainingSteps; i++) {
                     const loss = this.qlearning._trainBatch();
                     totalTrainingLoss += loss || 0;
                     
-                    // Yield every few training steps to keep UI responsive
-                    if (i % 2 === 0) {
+                    // Yield more frequently in hybrid mode to keep UI responsive
+                    const yieldFrequency = this.isHybridTraining ? 1 : 2;
+                    if (i % yieldFrequency === 0) {
                         await new Promise(resolve => setTimeout(resolve, 0));
                     }
                 }
-                this.lastTrainingLoss = totalTrainingLoss / batchSize;
+                this.lastTrainingLoss = trainingSteps > 0 ? totalTrainingLoss / trainingSteps : 0;
             }
             
             // Performance tracking - end batch
@@ -2295,13 +2310,18 @@ class TwoWheelBotRL {
             // Yield control to UI and continue training after brief pause
             await new Promise(resolve => setTimeout(resolve, 50)); // Longer pause to allow UI updates
             
-            if (this.isTraining) {
+            // In hybrid mode, don't start another batch (main thread handles progression)
+            // In pure parallel mode, continue with next batch
+            if (this.isTraining && !this.isHybridTraining) {
                 this.startNextEpisodeOrBatch();
             }
             
         } catch (error) {
             console.warn('Parallel batch failed, falling back to single episode:', error);
-            this.startNewEpisode();
+            // In hybrid mode, don't start new episode (main thread handles it)
+            if (!this.isHybridTraining) {
+                this.startNewEpisode();
+            }
         }
     }
     
@@ -2464,6 +2484,7 @@ class TwoWheelBotRL {
         if (this.demoMode === 'training' && newMode !== 'training') {
             this.isTraining = false;
             this.isPaused = false;
+            this.isHybridTraining = false;
             document.getElementById('start-training').disabled = false;
             document.getElementById('pause-training').disabled = true;
             document.getElementById('pause-training').textContent = 'Pause Training';
