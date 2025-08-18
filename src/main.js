@@ -77,7 +77,7 @@ class UIControls {
             robotHeight: { min: 0.2, max: 0.8 },
             motorStrength: { min: 1.0, max: 20.0 },
             wheelFriction: { min: 0.0, max: 1.0 },
-            maxAngle: { min: 0.5, max: 2.0 }, // 28.6 to 114.6 degrees
+            maxAngle: { min: Math.PI / 180, max: Math.PI / 3 }, // 1 to 60 degrees
             motorTorqueRange: { min: 0.5, max: 10.0 }
         };
         

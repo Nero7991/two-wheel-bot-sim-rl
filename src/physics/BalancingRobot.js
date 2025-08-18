@@ -75,7 +75,7 @@ export class BalancingRobot {
      * @param {number} config.friction - Friction coefficient (0 - 1, default: 0.1)
      * @param {number} config.damping - Angular damping coefficient (0 - 1, default: 0.05)
      * @param {number} config.timestep - Physics timestep in seconds (default: 0.02 = 20ms)
-     * @param {number} config.maxAngle - Maximum tilt angle before failure in radians (0.5 - 2.0, default: π/6 ≈ 0.524)
+     * @param {number} config.maxAngle - Maximum tilt angle before failure in radians (π/180 - π/3, 1-60°, default: π/6 ≈ 30°)
      * @param {number} config.motorTorqueRange - Motor torque action range in N⋅m (0.5 - 10.0, default: 8.0)
      */
     constructor(config = {}) {
@@ -91,7 +91,7 @@ export class BalancingRobot {
         this.wheelFriction = this._validateParameter(config.wheelFriction, 0.3, 0.0, 1.0, 'wheelFriction');
         
         // Configurable angle and motor limits
-        this.maxAngle = this._validateParameter(config.maxAngle, Math.PI / 6, 0.5, 2.0, 'maxAngle'); // Default 30 degrees
+        this.maxAngle = this._validateParameter(config.maxAngle, Math.PI / 6, Math.PI / 180, Math.PI / 3, 'maxAngle'); // Default 30 degrees, range 1-60 degrees
         this.motorTorqueRange = this._validateParameter(config.motorTorqueRange, 8.0, 0.5, 10.0, 'motorTorqueRange'); // Default ±8.0 Nm
         
         // Reward function type: 'simple' (CartPole-style) or 'complex' (angle-proportional)
@@ -364,7 +364,7 @@ export class BalancingRobot {
             this.wheelFriction = this._validateParameter(config.wheelFriction, this.wheelFriction, 0.0, 1.0, 'wheelFriction');
         }
         if (config.maxAngle !== undefined) {
-            this.maxAngle = this._validateParameter(config.maxAngle, this.maxAngle, 0.5, 2.0, 'maxAngle');
+            this.maxAngle = this._validateParameter(config.maxAngle, this.maxAngle, Math.PI / 180, Math.PI / 3, 'maxAngle');
         }
         if (config.motorTorqueRange !== undefined) {
             this.motorTorqueRange = this._validateParameter(config.motorTorqueRange, this.motorTorqueRange, 0.5, 10.0, 'motorTorqueRange');
