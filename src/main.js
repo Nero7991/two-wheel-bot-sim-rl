@@ -870,6 +870,7 @@ class TwoWheelBotRL {
             // Initialize UI state
             this.updatePDControllerUI();
             this.updateUserControlUI();
+            this.updateRewardTypeUI();
             this.updateModelDisplay('No model loaded', null);
             
             this.isInitialized = true;
@@ -1059,6 +1060,11 @@ class TwoWheelBotRL {
         // User Control toggle
         document.getElementById('toggle-user-control')?.addEventListener('click', () => {
             this.toggleUserControl();
+        });
+        
+        // Reward Type toggle
+        document.getElementById('toggle-reward-type')?.addEventListener('click', () => {
+            this.toggleRewardType();
         });
         
         // Setup collapsible sections
@@ -2249,6 +2255,7 @@ class TwoWheelBotRL {
         // Update PD controller UI based on new mode
         this.updatePDControllerUI();
         this.updateUserControlUI();
+        this.updateRewardTypeUI();
         
         // Initialize Q-learning if switching to training or evaluation mode
         if ((newMode === 'training' || newMode === 'evaluation') && !this.qlearning) {
@@ -2542,6 +2549,37 @@ class TwoWheelBotRL {
         }
         
         console.log('User Control (arrows)', this.userControlEnabled ? 'enabled' : 'disabled');
+    }
+    
+    /**
+     * Toggle reward function type between simple and complex
+     */
+    toggleRewardType() {
+        if (!this.robot) {
+            console.warn('Robot not initialized');
+            return;
+        }
+        
+        const currentType = this.robot.getRewardType();
+        const newType = currentType === 'simple' ? 'complex' : 'simple';
+        this.robot.setRewardType(newType);
+        this.updateRewardTypeUI();
+    }
+    
+    /**
+     * Update reward type toggle button UI
+     */
+    updateRewardTypeUI() {
+        const button = document.getElementById('toggle-reward-type');
+        if (!button || !this.robot) return;
+        
+        const currentType = this.robot.getRewardType();
+        const displayName = currentType === 'simple' ? 'CartPole (Simple)' : 'Proportional (Complex)';
+        const nextType = currentType === 'simple' ? 'complex' : 'simple';
+        const nextDisplayName = nextType === 'simple' ? 'CartPole' : 'Proportional';
+        
+        button.textContent = `${displayName} → Switch to ${nextDisplayName}`;
+        button.style.backgroundColor = currentType === 'simple' ? '#4CAF50' : '#2196F3';
     }
     
     /**

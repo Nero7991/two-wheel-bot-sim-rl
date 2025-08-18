@@ -85,6 +85,9 @@ export class BalancingRobot {
         this.wheelRadius = this._validateParameter(config.wheelRadius, 0.12, 0.02, 0.20, 'wheelRadius');
         this.wheelMass = this._validateParameter(config.wheelMass, 0.2, 0.1, 1.0, 'wheelMass');
         this.wheelFriction = this._validateParameter(config.wheelFriction, 0.3, 0.0, 1.0, 'wheelFriction');
+        
+        // Reward function type: 'simple' (CartPole-style) or 'complex' (angle-proportional)
+        this.rewardType = config.rewardType || 'simple';
 
         // Physical constants
         this.gravity = 9.81; // m/s²
@@ -152,7 +155,7 @@ export class BalancingRobot {
         if (this.state.hasFailed()) {
             return {
                 state: this.state.clone(),
-                reward: -100,
+                reward: this.rewardType === 'simple' ? 0.0 : -10.0,
                 done: true
             };
         }
@@ -244,20 +247,27 @@ export class BalancingRobot {
      * @returns {number} Reward value
      */
     _calculateReward(prevState, motorTorque) {
-        // Check if robot has failed
-        if (this.state.hasFailed()) {
-            return -10.0; // Penalty for falling
+        if (this.rewardType === 'simple') {
+            // CARTPOLE-STYLE REWARD: Binary reward
+            // Robot is upright = +1, Robot falls = 0
+            if (this.state.hasFailed()) {
+                return 0.0; // No reward for falling
+            }
+            return 1.0; // Reward for staying upright
+        } else {
+            // COMPLEX REWARD: Angle-proportional reward with failure penalty
+            if (this.state.hasFailed()) {
+                return -10.0; // Penalty for falling in complex mode
+            }
+            
+            const angleError = Math.abs(this.state.angle);
+            const maxAngle = Math.PI / 3; // 60 degrees before failure
+            
+            // Proportional reward: 1.0 when upright, 0.0 when at failure angle
+            const uprightReward = 1.0 - (angleError / maxAngle);
+            
+            return uprightReward;
         }
-
-        // MINIMAL REWARD: Standard inverted pendulum reward
-        // Just reward staying upright, keep it simple for debugging
-        const angleError = Math.abs(this.state.angle);
-        const maxAngle = Math.PI / 3; // 60 degrees before failure
-        
-        // Simple reward: 1.0 when upright, 0.0 when at failure angle
-        const uprightReward = 1.0 - (angleError / maxAngle);
-        
-        return uprightReward;
     }
 
     /**
@@ -292,7 +302,8 @@ export class BalancingRobot {
             timestep: this.timestep,
             wheelRadius: this.wheelRadius,
             wheelMass: this.wheelMass,
-            wheelFriction: this.wheelFriction
+            wheelFriction: this.wheelFriction,
+            rewardType: this.rewardType
         };
     }
 
@@ -351,6 +362,27 @@ export class BalancingRobot {
         };
     }
 
+    /**
+     * Set reward function type
+     * @param {string} type - 'simple' (CartPole-style) or 'complex' (angle-proportional)
+     */
+    setRewardType(type) {
+        if (type === 'simple' || type === 'complex') {
+            this.rewardType = type;
+            console.log(`Reward function changed to: ${type}`);
+        } else {
+            console.warn(`Invalid reward type: ${type}. Use 'simple' or 'complex'`);
+        }
+    }
+    
+    /**
+     * Get current reward type
+     * @returns {string} Current reward type ('simple' or 'complex')
+     */
+    getRewardType() {
+        return this.rewardType;
+    }
+    
     /**
      * Check if simulation is stable (no NaN or infinite values)
      * @returns {boolean} True if simulation is stable

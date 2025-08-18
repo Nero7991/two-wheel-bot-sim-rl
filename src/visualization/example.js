@@ -158,8 +158,8 @@ export class VisualizationExample {
         const state = this.robot.getState();
         
         // Simple PD controller for demonstration
-        const kp = 50; // Proportional gain
-        const kd = 10; // Derivative gain
+        const kp = 20; // Proportional gain
+        const kd = 5;  // Derivative gain
         
         const torque = -(kp * state.angle + kd * state.angularVelocity);
         

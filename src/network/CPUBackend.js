@@ -275,8 +275,14 @@ export class CPUBackend extends NeuralNetwork {
                 throw new Error(`Unknown initialization method: ${this.initMethod}`);
         }
         
-        // Initialize biases to zero (standard practice)
-        this.biasHidden = zeroInit(this.hiddenSize);
+        // Initialize biases
+        // Small positive bias for hidden layer to ensure some initial activation with ReLU
+        this.biasHidden = new Float32Array(this.hiddenSize);
+        for (let i = 0; i < this.hiddenSize; i++) {
+            this.biasHidden[i] = 0.01; // Small positive bias
+        }
+        
+        // Zero bias for output layer (common practice for final layer)
         this.biasOutput = zeroInit(this.outputSize);
     }
 

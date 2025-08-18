@@ -14,7 +14,7 @@ export class TrainingPerformanceTracker {
             alwaysRenderThreshold: 100,    // Always render if speed <= 100x
             skipRenderRatio: 20,           // Render 1 in N episodes when speed > threshold
             currentSkipCount: 0,           // Current skip counter
-            renderingMode: 'full'          // 'full', 'sparse', 'disabled'
+            renderingMode: 'full'          // 'full', 'sparse', 'minimal', 'disabled'
         };
         
         // Performance sampling
@@ -135,23 +135,8 @@ export class TrainingPerformanceTracker {
      * @returns {boolean} True if episode should be rendered
      */
     shouldRenderEpisode(trainingSpeed) {
-        // Always render at low speeds
-        if (trainingSpeed <= this.renderingConfig.alwaysRenderThreshold) {
-            this.renderingConfig.renderingMode = 'full';
-            this.renderingConfig.currentSkipCount = 0;
-            return true;
-        }
-        
-        // Sparse rendering at high speeds
-        this.renderingConfig.renderingMode = 'sparse';
-        this.renderingConfig.currentSkipCount++;
-        
-        if (this.renderingConfig.currentSkipCount >= this.renderingConfig.skipRenderRatio) {
-            this.renderingConfig.currentSkipCount = 0;
-            return true; // Render this episode
-        }
-        
-        return false; // Skip rendering this episode
+        // Always render episodes regardless of training speed
+        return true;
     }
     
     /**
@@ -160,14 +145,8 @@ export class TrainingPerformanceTracker {
      * @returns {boolean} True if steps should be rendered
      */
     shouldRenderStep(trainingSpeed) {
-        // For very high speeds, skip step-by-step rendering entirely
-        if (trainingSpeed > 100) {
-            this.renderingConfig.renderingMode = 'disabled';
-            return false;
-        }
-        
-        // For moderately high speeds, render steps only in rendered episodes
-        return this.renderingConfig.renderingMode === 'full';
+        // Always render steps regardless of training speed
+        return true;
     }
     
     /**
@@ -235,8 +214,10 @@ export class TrainingPerformanceTracker {
                 return 'Full (every episode)';
             case 'sparse':
                 return `Sparse (1:${this.renderingConfig.skipRenderRatio})`;
-            case 'disabled':
+            case 'minimal':
                 return 'Minimal (stats only)';
+            case 'disabled':
+                return 'Disabled';
             default:
                 return 'Unknown';
         }
@@ -296,37 +277,8 @@ export class SmartRenderingManager {
      * @returns {boolean} True if frame should be rendered
      */
     shouldRenderFrame(trainingSpeed) {
-        const now = Date.now();
-        const timeSinceLastRender = now - this.lastRenderTime;
-        
-        // Update performance tracker rendering mode based on training speed
-        if (trainingSpeed <= 100) {
-            this.performanceTracker.renderingConfig.renderingMode = 'full';
-        } else if (trainingSpeed <= 200) {
-            this.performanceTracker.renderingConfig.renderingMode = 'sparse';
-        } else {
-            this.performanceTracker.renderingConfig.renderingMode = 'disabled';
-        }
-        
-        // At speeds <= 100x, render every frame (no throttling)
-        if (trainingSpeed <= 100) {
-            this.lastRenderTime = now;
-            return true; // Always render at normal speeds
-        }
-        
-        // At high speeds (>100x), reduce rendering frequency
-        // Scale interval based on speed, but cap the multiplier to prevent too slow rendering
-        const speedMultiplier = Math.min(trainingSpeed / 100, 5); // Max 5x slower rendering
-        const adjustedInterval = this.targetRenderInterval * speedMultiplier;
-        
-        if (timeSinceLastRender >= adjustedInterval) {
-            this.lastRenderTime = now;
-            this.frameSkipCount = 0;
-            return true;
-        }
-        
-        this.frameSkipCount++;
-        return false;
+        // Always render regardless of training speed
+        return true;
     }
     
     /**
