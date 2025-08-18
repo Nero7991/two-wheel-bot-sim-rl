@@ -75,8 +75,8 @@ export class BalancingRobot {
      * @param {number} config.friction - Friction coefficient (0 - 1, default: 0.1)
      * @param {number} config.damping - Angular damping coefficient (0 - 1, default: 0.05)
      * @param {number} config.timestep - Physics timestep in seconds (default: 0.02 = 20ms)
-     * @param {number} config.maxAngle - Maximum tilt angle before failure in radians (0.5 - 2.0, default: π/3 ≈ 1.047)
-     * @param {number} config.motorTorqueRange - Motor torque action range in N⋅m (0.5 - 10.0, default: 1.0)
+     * @param {number} config.maxAngle - Maximum tilt angle before failure in radians (0.5 - 2.0, default: π/6 ≈ 0.524)
+     * @param {number} config.motorTorqueRange - Motor torque action range in N⋅m (0.5 - 10.0, default: 8.0)
      */
     constructor(config = {}) {
         // Validate and set parameters with defaults
@@ -91,8 +91,8 @@ export class BalancingRobot {
         this.wheelFriction = this._validateParameter(config.wheelFriction, 0.3, 0.0, 1.0, 'wheelFriction');
         
         // Configurable angle and motor limits
-        this.maxAngle = this._validateParameter(config.maxAngle, Math.PI / 3, 0.5, 2.0, 'maxAngle'); // Default 60 degrees
-        this.motorTorqueRange = this._validateParameter(config.motorTorqueRange, 1.0, 0.5, 10.0, 'motorTorqueRange'); // Default ±1.0 Nm
+        this.maxAngle = this._validateParameter(config.maxAngle, Math.PI / 6, 0.5, 2.0, 'maxAngle'); // Default 30 degrees
+        this.motorTorqueRange = this._validateParameter(config.motorTorqueRange, 8.0, 0.5, 10.0, 'motorTorqueRange'); // Default ±8.0 Nm
         
         // Reward function type: 'simple' (CartPole-style) or 'complex' (angle-proportional)
         this.rewardType = config.rewardType || 'simple';

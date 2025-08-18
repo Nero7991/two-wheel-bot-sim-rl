@@ -49,8 +49,8 @@ class UIControls {
             robotHeight: 0.4,
             motorStrength: 5.0,
             wheelFriction: 0.3,
-            maxAngle: Math.PI / 3, // 60 degrees
-            motorTorqueRange: 1.0
+            maxAngle: Math.PI / 6, // 30 degrees
+            motorTorqueRange: 8.0
         };
         
         // Network architecture configuration

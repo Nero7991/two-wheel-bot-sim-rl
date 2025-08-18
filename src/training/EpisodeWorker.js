@@ -88,8 +88,8 @@ function initializePhysics() {
             this.rewardType = config.rewardType || 'simple';
             
             // Configurable angle and motor limits
-            this.maxAngle = config.maxAngle || Math.PI / 3; // Default 60 degrees
-            this.motorTorqueRange = config.motorTorqueRange || 1.0; // Default ±1.0 Nm
+            this.maxAngle = config.maxAngle || Math.PI / 6; // Default 30 degrees
+            this.motorTorqueRange = config.motorTorqueRange || 8.0; // Default ±8.0 Nm
             
             this.gravity = 9.81;
             this.momentOfInertia = this.mass * this.centerOfMassHeight * this.centerOfMassHeight;
