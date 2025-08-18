@@ -71,7 +71,7 @@ class UIControls {
             epsilonDecay: { min: 1000, max: 10000 },
             batchSize: { min: 4, max: 512 },
             targetUpdateFreq: { min: 10, max: 1000 },
-            maxEpisodes: { min: 100, max: 10000 },
+            maxEpisodes: { min: 100, max: 1000000 },
             maxStepsPerEpisode: { min: 50, max: 5000 },
             robotMass: { min: 0.5, max: 3.0 },
             robotHeight: { min: 0.2, max: 0.8 },
