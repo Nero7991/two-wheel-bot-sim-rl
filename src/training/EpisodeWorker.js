@@ -65,10 +65,22 @@ function initializePhysics() {
             return new RobotState(this.angle, this.angularVelocity, this.position, this.velocity, this.wheelAngle, this.wheelVelocity);
         }
         
-        getNormalizedInputs(maxAngle = Math.PI / 3) {
+        getNormalizedInputs(maxAngle = Math.PI / 3, timesteps = 1) {
+            // For worker, we'll just repeat current state for all timesteps
+            // This is a simplified implementation since workers don't maintain full history
             const normalizedAngle = Math.max(-1, Math.min(1, this.angle / maxAngle));
             const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.angularVelocity / 10));
-            return new Float32Array([normalizedAngle, normalizedAngularVelocity]);
+            
+            const inputSize = timesteps * 2;
+            const inputs = new Float32Array(inputSize);
+            
+            // Fill all timesteps with current state (simplified approach)
+            for (let i = 0; i < timesteps; i++) {
+                inputs[i * 2] = normalizedAngle;
+                inputs[i * 2 + 1] = normalizedAngularVelocity;
+            }
+            
+            return inputs;
         }
         
         hasFailed(maxAngle = Math.PI / 3) {
@@ -198,8 +210,8 @@ function initializePhysics() {
             return this.state.clone();
         }
         
-        getNormalizedInputs() {
-            return this.state.getNormalizedInputs(this.maxAngle);
+        getNormalizedInputs(timesteps = 1) {
+            return this.state.getNormalizedInputs(this.maxAngle, timesteps);
         }
         
         getStats() {
@@ -244,10 +256,10 @@ function initializeNeuralNetwork() {
         return output;
     }
     
-    // Simple neural network for worker
+    // Simple neural network for worker with variable input size support
     class WorkerNeuralNetwork {
         constructor() {
-            this.inputSize = 2;
+            this.inputSize = 2;  // Will be updated when weights are set
             this.hiddenSize = 64;
             this.outputSize = 3;
             
@@ -256,15 +268,26 @@ function initializeNeuralNetwork() {
             this.weightsHiddenOutput = null;
             this.biasOutput = null;
             
-            this.hiddenActivation = new Float32Array(this.hiddenSize);
-            this.outputActivation = new Float32Array(this.outputSize);
+            this.hiddenActivation = null;
+            this.outputActivation = null;
         }
         
         setWeights(weights) {
+            // Extract architecture from weights
+            if (weights.architecture) {
+                this.inputSize = weights.architecture.inputSize;
+                this.hiddenSize = weights.architecture.hiddenSize;
+                this.outputSize = weights.architecture.outputSize;
+            }
+            
             this.weightsInputHidden = new Float32Array(weights.weightsInputHidden);
             this.biasHidden = new Float32Array(weights.biasHidden);
             this.weightsHiddenOutput = new Float32Array(weights.weightsHiddenOutput);
             this.biasOutput = new Float32Array(weights.biasOutput);
+            
+            // Allocate activation arrays
+            this.hiddenActivation = new Float32Array(this.hiddenSize);
+            this.outputActivation = new Float32Array(this.outputSize);
         }
         
         forward(input) {
@@ -307,7 +330,8 @@ function runEpisode(params) {
         robotConfig,
         neuralNetworkWeights,
         epsilon,
-        explorationEnabled
+        explorationEnabled,
+        timesteps = 1
     } = params;
     
     // Create robot with provided configuration
@@ -338,7 +362,7 @@ function runEpisode(params) {
     let previousReward = 0;
     
     while (stepCount < maxSteps) {
-        const currentState = robot.getNormalizedInputs();
+        const currentState = robot.getNormalizedInputs(timesteps);
         
         // Select action using neural network
         let actionIndex;
@@ -384,7 +408,7 @@ function runEpisode(params) {
                 state: Array.from(currentState),
                 action: actionIndex,
                 reward: result.reward,
-                nextState: Array.from(result.state.getNormalizedInputs(robot.maxAngle)),
+                nextState: Array.from(result.state.getNormalizedInputs(robot.maxAngle, timesteps)),
                 done: true
             });
             break;

@@ -649,6 +649,20 @@
                         Free Run Speed: <span id="debug-speed-value" class="slider-value">1.0x</span>
                     </label>
                     <input type="range" id="debug-speed" min="0.1" max="2.0" step="0.1" value="1.0">
+                    
+                    <div style="margin-top: 20px;">
+                        <label for="offset-angle-error" class="tooltip" data-tooltip="Simulate sensor offset error between actual and measured angle (0-10 degrees). Useful for testing offset-adaptive reward learning">
+                            Offset Angle Error: <span id="offset-angle-error-value" class="slider-value">0.0°</span>
+                        </label>
+                        <input type="range" id="offset-angle-error" min="0" max="10" step="0.1" value="0" onchange="console.log('Offset angle slider changed to:', this.value)">
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <label for="reset-angle" class="tooltip" data-tooltip="Angle to set when reset is pressed (0-30 degrees). Robot will start at this angle (randomly positive or negative)">
+                            Reset Angle: <span id="reset-angle-value" class="slider-value">5.0°</span>
+                        </label>
+                        <input type="range" id="reset-angle" min="0" max="30" step="0.5" value="5" onchange="console.log('Reset angle slider changed to:', this.value)">
+                    </div>
                 </div>
                 
                 <div style="padding: 20px 15px; border-bottom: 1px solid #404040; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 5px;">
@@ -692,14 +706,45 @@
                         </div>
                         
                         <div class="slider-container">
-                            <label for="reward-function" class="tooltip" data-tooltip="Choose reward function: CartPole gives +1 for balance, Proportional gives scaled rewards, Energy Efficient penalizes unnecessary motor usage">
+                            <label for="reward-function" class="tooltip" data-tooltip="Choose reward function: CartPole gives +1 for balance, Proportional gives scaled rewards, Energy Efficient penalizes motor usage, Offset-Adaptive learns to balance despite sensor offset/drift">
                                 Reward Function:
                             </label>
                             <select id="reward-function" style="width: 100%; padding: 4px; margin-top: 4px;">
                                 <option value="simple">CartPole (Binary: +1 or 0)</option>
                                 <option value="complex" selected>Proportional (Angle-based)</option>
                                 <option value="efficient">Energy Efficient (Proportional + Torque Penalty)</option>
+                                <option value="offset-adaptive">Offset-Adaptive (Learns Balance Point)</option>
                             </select>
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label for="max-angle" class="tooltip" data-tooltip="Maximum tilt angle before episode failure (1-60 degrees). This is the training termination condition">
+                                Max Angle: <span id="max-angle-value" class="slider-value">30.0°</span>
+                            </label>
+                            <input type="range" id="max-angle" min="0.0175" max="1.047" step="0.0175" value="0.524">
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label for="motor-torque-range" class="tooltip" data-tooltip="Motor torque range for left/right actions (0.5-10.0 Nm). Higher values = stronger corrections">
+                                Motor Range: <span id="motor-torque-range-value" class="slider-value">±8.0 Nm</span>
+                            </label>
+                            <input type="range" id="motor-torque-range" min="0.5" max="10.0" step="0.1" value="8.0">
+                        </div>
+                        
+                        <div class="slider-container">
+                            <label for="history-timesteps" class="tooltip" data-tooltip="Number of previous timesteps to include as input (1=current only, 8=current+7 history). More timesteps help learn temporal patterns and sensor offsets">
+                                History Timesteps:
+                                <span id="history-timesteps-value">1</span>
+                            </label>
+                            <input type="range" id="history-timesteps" min="1" max="8" value="1" step="1">
+                        </div>
+                        
+                        <div class="debug-display" id="history-debug" style="font-family: 'Courier New', monospace; font-size: 0.75rem; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px;">
+                            <div style="color: #00d4ff; margin-bottom: 4px;">History Values Debug:</div>
+                            <div id="history-debug-content" style="color: #fff;">
+                                <div>Current: angle=+0.000, angVel=+0.000</div>
+                                <div>Network Input: [+0.00, +0.00]</div>
+                            </div>
                         </div>
                         
                     </div>
@@ -888,19 +933,6 @@
                             <input type="range" id="wheel-friction" min="0" max="1" step="0.05" value="0.3">
                         </div>
                         
-                        <div class="slider-container">
-                            <label for="max-angle" class="tooltip" data-tooltip="Maximum tilt angle before failure (1-60 degrees)">
-                                Max Angle: <span id="max-angle-value" class="slider-value">30.0°</span>
-                            </label>
-                            <input type="range" id="max-angle" min="0.0175" max="1.047" step="0.0175" value="0.524">
-                        </div>
-                        
-                        <div class="slider-container">
-                            <label for="motor-torque-range" class="tooltip" data-tooltip="Motor torque action range (0.5-10.0 Nm)">
-                                Motor Range: <span id="motor-torque-range-value" class="slider-value">±8.0 Nm</span>
-                            </label>
-                            <input type="range" id="motor-torque-range" min="0.5" max="10.0" step="0.1" value="8.0">
-                        </div>
                     </div>
                     </div>
                 </div>

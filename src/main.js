@@ -96,41 +96,51 @@ class UIControls {
         const trainingSpeedSlider = document.getElementById('training-speed');
         const trainingSpeedValue = document.getElementById('training-speed-value');
         
-        trainingSpeedSlider.addEventListener('input', (e) => {
-            const value = parseFloat(e.target.value);
-            this.setParameter('trainingSpeed', value);
-            this.app.setTrainingSpeed(value);
-        });
+        if (trainingSpeedSlider) {
+            trainingSpeedSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.setParameter('trainingSpeed', value);
+                this.app.setTrainingSpeed(value);
+            });
+        }
         
         // Speed preset buttons
-        document.getElementById('speed-1x').addEventListener('click', () => {
-            this.setSpeedPreset(1.0);
+        const speedButtons = [
+            { id: 'speed-1x', value: 1.0 },
+            { id: 'speed-2x', value: 2.0 },
+            { id: 'speed-10x', value: 10.0 },
+            { id: 'speed-20x', value: 20.0 },
+            { id: 'speed-50x', value: 50.0 }
+        ];
+        
+        speedButtons.forEach(button => {
+            const element = document.getElementById(button.id);
+            if (element) {
+                element.addEventListener('click', () => {
+                    this.setSpeedPreset(button.value);
+                });
+            }
         });
-        document.getElementById('speed-2x').addEventListener('click', () => {
-            this.setSpeedPreset(2.0);
-        });
-        document.getElementById('speed-10x').addEventListener('click', () => {
-            this.setSpeedPreset(10.0);
-        });
-        document.getElementById('speed-50x').addEventListener('click', () => {
-            this.setSpeedPreset(50.0);
-        });
-        document.getElementById('speed-20x').addEventListener('click', () => {
-            this.setSpeedPreset(20.0);
-        });
-        document.getElementById('speed-parallel').addEventListener('click', () => {
-            this.enableParallelTraining();
-        });
+        
+        // Parallel training button
+        const parallelButton = document.getElementById('speed-parallel');
+        if (parallelButton) {
+            parallelButton.addEventListener('click', () => {
+                this.enableParallelTraining();
+            });
+        }
         
         // Debug speed control for manual testing
         const debugSpeedSlider = document.getElementById('debug-speed');
         const debugSpeedValue = document.getElementById('debug-speed-value');
         
-        debugSpeedSlider.addEventListener('input', (e) => {
-            const value = parseFloat(e.target.value);
-            this.app.setDebugSpeed(value);
-            debugSpeedValue.textContent = `${value.toFixed(1)}x`;
-        });
+        if (debugSpeedSlider) {
+            debugSpeedSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.app.setDebugSpeed(value);
+                debugSpeedValue.textContent = `${value.toFixed(1)}x`;
+            });
+        }
         
         // Network configuration controls
         this.setupNetworkConfiguration();
@@ -288,6 +298,36 @@ class UIControls {
                 const value = parseFloat(e.target.value);
                 this.setParameter('motorTorqueRange', value);
                 this.app.updateMotorTorqueRange(value);
+            });
+        }
+        
+        // History timesteps control for multi-timestep learning
+        const historyTimestepsSlider = document.getElementById('history-timesteps');
+        const historyTimestepsValue = document.getElementById('history-timesteps-value');
+        
+        if (historyTimestepsSlider) {
+            historyTimestepsSlider.addEventListener('input', (e) => {
+                const timesteps = parseInt(e.target.value);
+                historyTimestepsValue.textContent = timesteps;
+                
+                // Update robot's timestep setting
+                if (this.app && this.app.robot) {
+                    this.app.robot.setHistoryTimesteps(timesteps);
+                    console.log(`History timesteps updated to: ${timesteps} (${timesteps * 2} inputs)`);
+                    
+                    // If Q-learning is initialized, reinitialize with new input size
+                    if (this.app.qlearning) {
+                        const currentEpisode = this.app.qlearning.episode;
+                        console.log(`Reinitializing Q-learning for ${timesteps} timesteps...`);
+                        
+                        // Reinitialize Q-learning with new input size
+                        this.app.initializeQLearning().then(() => {
+                            console.log(`Q-learning reinitialized for ${timesteps} timesteps`);
+                        }).catch(error => {
+                            console.error('Failed to reinitialize Q-learning:', error);
+                        });
+                    }
+                }
             });
         }
     }
@@ -837,6 +877,9 @@ class TwoWheelBotRL {
         this.episodeEnded = false; // Flag to prevent multiple episode end calls
         this.parallelModeEnabled = false; // Track if parallel training is manually enabled
         
+        // Free run mode settings
+        this.resetAngleDegrees = 5.0; // Default reset angle in degrees
+        
         // Debug control speed
         this.debugSpeed = 1.0;
         this.debugLastAction = 'None';
@@ -1384,10 +1427,20 @@ class TwoWheelBotRL {
             console.log('Performance charts reset');
         }
         
-        // Reset robot state to perfectly balanced
+        // Reset robot state
         if (this.robot) {
+            let resetAngle = 0; // Default: perfectly balanced
+            
+            // In free run mode, use specific angle (randomly positive or negative)
+            if (this.demoMode === 'freerun' && this.resetAngleDegrees > 0) {
+                const angleDegrees = this.resetAngleDegrees || 5.0;
+                const angleRadians = angleDegrees * Math.PI / 180;
+                resetAngle = (Math.random() < 0.5 ? -1 : 1) * angleRadians; // Randomly +/- the specified angle
+                console.log(`Reset with angle: ${(resetAngle * 180 / Math.PI).toFixed(2)}° (set to ±${angleDegrees.toFixed(1)}°)`);
+            }
+            
             this.robot.reset({
-                angle: 0, // Perfectly balanced instead of random
+                angle: resetAngle,
                 angularVelocity: 0,
                 position: 0,
                 velocity: 0
@@ -1642,9 +1695,8 @@ class TwoWheelBotRL {
             let motorTorque = 0;
             let actionIndex = 0;
             
-            // Get current state for Q-learning
-            const currentState = this.robot.getState();
-            const normalizedState = currentState.getNormalizedInputs();
+            // Get current normalized state for Q-learning (includes multi-timestep logic)
+            const normalizedState = this.robot.getNormalizedInputs();
             
             // Get motor torque based on current mode
             switch (this.demoMode) {
@@ -1724,8 +1776,8 @@ class TwoWheelBotRL {
             
             // Q-learning training integration
             if (this.demoMode === 'training' && this.isTraining && !this.isPaused && this.qlearning) {
-                // Get next state after physics step
-                const nextState = result.state.getNormalizedInputs();
+                // Get next state after physics step (includes multi-timestep logic)
+                const nextState = this.robot.getNormalizedInputs();
                 
                 // Train on previous experience if we have one
                 // At high speeds, reduce training frequency to prevent bottlenecks
@@ -1893,6 +1945,9 @@ class TwoWheelBotRL {
         // Update Q-value display
         document.getElementById('qvalue-estimate').textContent = `Q-Value: ${this.lastQValue.toFixed(3)}`;
         
+        // Update history timesteps debug display
+        this.updateHistoryDebugDisplay();
+        
         // Update debug display during manual control and evaluation
         if (this.demoMode === 'freerun') {
             const robotState = this.robot ? this.robot.getState() : null;
@@ -1924,6 +1979,56 @@ class TwoWheelBotRL {
         
         // Update backend performance info
         this.updateBackendPerformanceDisplay();
+    }
+    
+    /**
+     * Update the history debug display showing current timestep values
+     */
+    updateHistoryDebugDisplay() {
+        const debugContent = document.getElementById('history-debug-content');
+        if (!debugContent || !this.robot) return;
+        
+        const robotState = this.robot.getState();
+        const timesteps = this.robot.historyTimesteps || 1;
+        
+        // Get current normalized inputs
+        const networkInput = this.robot.getNormalizedInputs();
+        
+        // Format current state
+        let displayLines = [];
+        
+        if (this.robot.rewardType === 'offset-adaptive') {
+            const measuredAngle = this.robot.getMeasuredAngle();
+            const trueAngle = robotState.angle;
+            const offset = this.robot.angleOffset;
+            
+            displayLines.push(`True: angle=${trueAngle.toFixed(3)}, angVel=${robotState.angularVelocity.toFixed(3)}`);
+            displayLines.push(`Measured: angle=${measuredAngle.toFixed(3)}, offset=${offset.toFixed(3)}`);
+        } else {
+            displayLines.push(`Current: angle=${robotState.angle.toFixed(3)}, angVel=${robotState.angularVelocity.toFixed(3)}`);
+        }
+        
+        // Format network input (showing all timesteps)
+        let inputStr = `Network Input [${timesteps}x]: `;
+        const inputValues = [];
+        for (let i = 0; i < networkInput.length; i += 2) {
+            const angle = networkInput[i];
+            const angVel = networkInput[i + 1];
+            inputValues.push(`[${angle.toFixed(2)}, ${angVel.toFixed(2)}]`);
+        }
+        inputStr += inputValues.join(', ');
+        displayLines.push(inputStr);
+        
+        // Show timestep info
+        displayLines.push(`Timesteps: ${timesteps} (${networkInput.length} inputs total)`);
+        
+        // Show state history stats if available
+        if (this.robot.stateHistory && timesteps > 1) {
+            const stats = this.robot.stateHistory.getStats();
+            displayLines.push(`Avg Angle: ${stats.averageAngle.toFixed(3)}, StdDev: ${stats.angleStdDev.toFixed(3)}`);
+        }
+        
+        debugContent.innerHTML = displayLines.map(line => `<div>${line}</div>`).join('');
     }
     
     /**
@@ -2175,9 +2280,13 @@ class TwoWheelBotRL {
     }
     
     /**
-     * Initialize Q-learning for training with WebGPU backend
+     * Initialize Q-learning for training with variable timestep support
      */
-    async initializeQLearning() {
+    async initializeQLearning(overrideParams = {}) {
+        // Get current timestep settings from robot
+        const timesteps = this.robot ? this.robot.historyTimesteps : 1;
+        const inputSize = timesteps * 2; // 2 values per timestep (angle, angular velocity)
+        
         // Use parameters from UI controls if available
         const params = this.uiControls ? {
             learningRate: this.uiControls.getParameter('learningRate'),
@@ -2185,7 +2294,8 @@ class TwoWheelBotRL {
             epsilonDecay: 0.995,
             maxEpisodes: 1000,
             maxStepsPerEpisode: 1000,
-            hiddenSize: this.uiControls.getParameter('hiddenNeurons')
+            hiddenSize: this.uiControls.getParameter('hiddenNeurons'),
+            ...overrideParams
         } : {
             learningRate: 0.0020,  // Optimized default for better convergence
             epsilon: 0.3,         // Moderate exploration
@@ -2195,7 +2305,8 @@ class TwoWheelBotRL {
             targetUpdateFreq: 100, // Standard update frequency
             maxEpisodes: 1000,
             maxStepsPerEpisode: 1000,
-            hiddenSize: 8
+            hiddenSize: 8,
+            ...overrideParams
         };
         
         // Create Q-learning with WebGPU backend
@@ -2208,8 +2319,9 @@ class TwoWheelBotRL {
             // For now, the integration is prepared for when Q-learning supports custom backends
         }
         
-        await this.qlearning.initialize();
-        console.log('Q-learning initialized with parameters:', params);
+        // Initialize with calculated input size for current timestep setting
+        await this.qlearning.initialize(inputSize);
+        console.log(`Q-learning initialized for ${timesteps} timesteps (${inputSize} inputs) with parameters:`, params);
         
         // Initialize parallel training wrapper
         if (this.systemCapabilities && this.systemCapabilities.maxWorkers > 1) {
@@ -2262,8 +2374,8 @@ class TwoWheelBotRL {
     getTrainingTorqueWithAction() {
         if (!this.qlearning) return { torque: 0, actionIndex: 0 };
         
-        const state = this.robot.getState();
-        const normalizedState = state.getNormalizedInputs();
+        // Get normalized state directly from robot (includes multi-timestep logic)
+        const normalizedState = this.robot.getNormalizedInputs();
         
         // Get Q-values for current state
         const qValues = this.qlearning.getAllQValues(normalizedState);
@@ -2299,8 +2411,8 @@ class TwoWheelBotRL {
     getEvaluationTorque() {
         if (!this.qlearning) return 0;
         
-        const state = this.robot.getState();
-        const normalizedState = state.getNormalizedInputs();
+        // Get normalized state directly from robot (includes multi-timestep logic)
+        const normalizedState = this.robot.getNormalizedInputs();
         
         // Select best action (no exploration)
         const actionIndex = this.qlearning.selectAction(normalizedState, false);
@@ -2415,7 +2527,10 @@ class TwoWheelBotRL {
                     
                     // Update performance charts for EACH individual episode
                     if (this.performanceCharts && this.qlearning) {
-                        const balancedState = new Float32Array([0.0, 0.0]);
+                        // Create balanced state matching current timestep configuration
+                        const timesteps = this.robot ? this.robot.historyTimesteps : 1;
+                        const inputSize = timesteps * 2;
+                        const balancedState = new Float32Array(inputSize).fill(0.0);
                         const qValues = this.qlearning.getAllQValues(balancedState);
                         const avgQValue = Array.from(qValues).reduce((a, b) => a + b, 0) / qValues.length;
                         
@@ -2644,7 +2759,10 @@ class TwoWheelBotRL {
             // Update performance charts with episode completion data
             if (this.performanceCharts && this.qlearning) {
                 // Get current Q-value estimate for balanced state
-                const balancedState = new Float32Array([0.0, 0.0]); // Perfectly balanced
+                // Create balanced state matching current timestep configuration
+                const timesteps = this.robot ? this.robot.historyTimesteps : 1;
+                const inputSize = timesteps * 2;
+                const balancedState = new Float32Array(inputSize).fill(0.0); // All timesteps balanced
                 const qValues = this.qlearning.getAllQValues(balancedState);
                 const avgQValue = Array.from(qValues).reduce((a, b) => a + b, 0) / qValues.length;
                 
@@ -3270,8 +3388,18 @@ class TwoWheelBotRL {
      */
     resetRobotPosition() {
         if (this.robot) {
+            let resetAngle = 0; // Default: perfectly balanced
+            
+            // In free run mode, use specific angle (randomly positive or negative) from slider
+            if (this.demoMode === 'freerun' && this.resetAngleDegrees > 0) {
+                const angleDegrees = this.resetAngleDegrees || 5.0;
+                const angleRadians = angleDegrees * Math.PI / 180;
+                resetAngle = (Math.random() < 0.5 ? -1 : 1) * angleRadians; // Randomly +/- the specified angle
+                console.log(`Reset with angle: ${(resetAngle * 180 / Math.PI).toFixed(2)}° (set to ±${angleDegrees.toFixed(1)}°)`);
+            }
+            
             this.robot.reset({
-                angle: 0,
+                angle: resetAngle,
                 angularVelocity: 0,
                 position: 0,
                 velocity: 0
@@ -3298,12 +3426,16 @@ class TwoWheelBotRL {
         // Get model data
         const modelData = this.qlearning.save();
         
-        // Add metadata
+        // Add metadata including timestep configuration
         const saveData = {
             name: modelName,
             timestamp: now.toISOString(),
             type: 'DQN',
             architecture: this.qlearning.getStats(),
+            timestepConfig: {
+                historyTimesteps: this.robot ? this.robot.historyTimesteps : 1,
+                inputSize: this.qlearning.qNetwork ? this.qlearning.qNetwork.getArchitecture().inputSize : 2
+            },
             episodesTrained: this.episodeCount,
             bestScore: this.bestScore,
             trainingCompleted: this.qlearning.trainingCompleted,
@@ -3541,6 +3673,25 @@ class TwoWheelBotRL {
                 console.log(`  Loading: ${savedArchitecture.inputSize}-${savedArchitecture.hiddenSize}-${savedArchitecture.outputSize}`);
                 
                 needsReinit = true;
+            }
+        }
+        
+        // Handle timestep configuration if available
+        if (saveData.timestepConfig) {
+            const savedTimesteps = saveData.timestepConfig.historyTimesteps || 1;
+            
+            // Update robot timestep configuration
+            if (this.robot) {
+                this.robot.setHistoryTimesteps(savedTimesteps);
+                console.log(`Restored history timesteps: ${savedTimesteps}`);
+            }
+            
+            // Update UI slider
+            const historyTimestepsSlider = document.getElementById('history-timesteps');
+            const historyTimestepsValue = document.getElementById('history-timesteps-value');
+            if (historyTimestepsSlider) {
+                historyTimestepsSlider.value = savedTimesteps;
+                historyTimestepsValue.textContent = savedTimesteps;
             }
         }
         
@@ -4059,10 +4210,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         app = new TwoWheelBotRL();
         await app.initialize();
+        
+        // Setup custom sliders after app initialization
+        setupCustomSliders();
     } catch (error) {
         console.error('Failed to start application:', error);
     }
 });
+
+// Custom slider setup function
+function setupCustomSliders() {
+    console.log('Setting up custom sliders...');
+    
+    // Offset angle error slider
+    const offsetSlider = document.getElementById('offset-angle-error');
+    const offsetValue = document.getElementById('offset-angle-error-value');
+    
+    if (offsetSlider && offsetValue) {
+        console.log('Found offset angle slider');
+        offsetSlider.addEventListener('input', (e) => {
+            const degrees = parseFloat(e.target.value);
+            const radians = degrees * Math.PI / 180;
+            offsetValue.textContent = `${degrees.toFixed(1)}°`;
+            
+            if (app && app.robot) {
+                app.robot.angleOffset = radians;
+                console.log(`Offset angle set to: ${degrees.toFixed(1)}° (${radians.toFixed(3)} rad)`);
+            }
+        });
+    } else {
+        console.warn('Offset angle slider or value element not found');
+    }
+    
+    // Reset angle slider
+    const resetSlider = document.getElementById('reset-angle');
+    const resetValue = document.getElementById('reset-angle-value');
+    
+    if (resetSlider && resetValue) {
+        console.log('Found reset angle slider');
+        resetSlider.addEventListener('input', (e) => {
+            const degrees = parseFloat(e.target.value);
+            resetValue.textContent = `${degrees.toFixed(1)}°`;
+            
+            if (app) {
+                app.resetAngleDegrees = degrees;
+                console.log(`Reset angle set to: ${degrees.toFixed(1)}° (randomly +/-)`);
+            }
+        });
+    } else {
+        console.warn('Reset angle slider or value element not found');
+    }
+}
 
 // Handle page unload
 window.addEventListener('beforeunload', () => {

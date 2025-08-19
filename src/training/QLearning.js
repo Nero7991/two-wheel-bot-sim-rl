@@ -80,6 +80,7 @@ export class Hyperparameters {
 
 /**
  * Experience replay buffer for storing and sampling training experiences
+ * Now supports variable-sized state arrays for multi-timestep learning
  */
 export class ReplayBuffer {
     constructor(maxSize = 10000) {
@@ -90,19 +91,25 @@ export class ReplayBuffer {
     
     /**
      * Add experience to buffer
-     * @param {Float32Array} state - Current state
+     * @param {Float32Array} state - Current state (variable size)
      * @param {number} action - Action taken
      * @param {number} reward - Reward received
-     * @param {Float32Array} nextState - Next state
+     * @param {Float32Array} nextState - Next state (variable size)
      * @param {boolean} done - Episode termination flag
      */
     add(state, action, reward, nextState, done) {
+        // Validate input sizes match
+        if (state.length !== nextState.length) {
+            throw new Error(`State size mismatch: current=${state.length}, next=${nextState.length}`);
+        }
+        
         const experience = {
             state: new Float32Array(state),
             action: action,
             reward: reward,
             nextState: new Float32Array(nextState),
-            done: done
+            done: done,
+            stateSize: state.length  // Store size for debugging/validation
         };
         
         if (this.buffer.length < this.maxSize) {
@@ -266,14 +273,15 @@ export class QLearning {
     
     /**
      * Initialize the Q-learning networks
+     * @param {number} inputSize - Input size based on timesteps (2 * timesteps)
      * @returns {Promise<void>}
      */
-    async initialize() {
+    async initialize(inputSize = NetworkConfig.INPUT_SIZE) {
         try {
-            // Create main Q-network
+            // Create main Q-network with variable input size
             this.qNetwork = new CPUBackend();
             await this.qNetwork.createNetwork(
-                NetworkConfig.INPUT_SIZE,    // 2 inputs: angle, angular velocity
+                inputSize,                   // Variable input size: 2 * timesteps
                 this.hyperparams.hiddenSize, // Hidden layer size
                 this.numActions,             // 3 actions: left, brake, right
                 { initMethod: NetworkConfig.INITIALIZATION.HE }
@@ -283,7 +291,7 @@ export class QLearning {
             this.targetNetwork = this.qNetwork.clone();
             
             this.isInitialized = true;
-            console.log(`Q-Learning networks initialized: ${NetworkConfig.INPUT_SIZE}-${this.hyperparams.hiddenSize}-${this.numActions}`);
+            console.log(`Q-Learning networks initialized: ${inputSize}-${this.hyperparams.hiddenSize}-${this.numActions}`);
             console.log(`Total parameters: ${this.qNetwork.getParameterCount()}`);
             
         } catch (error) {
@@ -303,9 +311,15 @@ export class QLearning {
             throw new Error('Q-Learning not initialized. Call initialize() first.');
         }
         
-        // Validate state input
-        if (!(state instanceof Float32Array) || state.length !== NetworkConfig.INPUT_SIZE) {
-            throw new Error(`Invalid state input. Expected Float32Array of length ${NetworkConfig.INPUT_SIZE}`);
+        // Validate state input (now supports variable input sizes)
+        if (!(state instanceof Float32Array)) {
+            throw new Error(`Invalid state input. Expected Float32Array`);
+        }
+        
+        // Check input size matches network architecture
+        const expectedInputSize = this.qNetwork.getArchitecture().inputSize;
+        if (state.length !== expectedInputSize) {
+            throw new Error(`Invalid state input size. Expected ${expectedInputSize}, got ${state.length}`);
         }
         
         // Epsilon-greedy exploration
@@ -552,7 +566,7 @@ export class QLearning {
         
         // Reset environment and get initial state
         environment.reset();
-        let state = environment.getState().getNormalizedInputs();
+        let state = environment.getNormalizedInputs();
         
         let totalReward = 0;
         let stepCount = 0;
@@ -566,7 +580,7 @@ export class QLearning {
             
             // Take action in environment
             const result = environment.step(actionValue);
-            const nextState = result.state.getNormalizedInputs();
+            const nextState = environment.getNormalizedInputs();
             const reward = result.reward;
             const done = result.done;
             
@@ -715,7 +729,7 @@ export class QLearning {
         
         for (let ep = 0; ep < numEpisodes; ep++) {
             environment.reset();
-            let state = environment.getState().getNormalizedInputs();
+            let state = environment.getNormalizedInputs();
             let totalReward = 0;
             let stepCount = 0;
             
@@ -724,7 +738,7 @@ export class QLearning {
                 const actionValue = this.actions[actionIndex];
                 
                 const result = environment.step(actionValue);
-                const nextState = result.state.getNormalizedInputs();
+                const nextState = environment.getNormalizedInputs();
                 const reward = result.reward;
                 const done = result.done;
                 
@@ -847,9 +861,9 @@ export class QLearning {
         this.actions = modelData.actions || [-1.0, 0.0, 1.0];
         this.numActions = this.actions.length;
         
-        // Initialize with correct architecture
+        // Initialize with correct architecture from saved model
         if (!this.isInitialized) {
-            await this.initialize();
+            await this.initialize(savedArchitecture.inputSize);
         }
         
         // Load weights (should now be compatible)

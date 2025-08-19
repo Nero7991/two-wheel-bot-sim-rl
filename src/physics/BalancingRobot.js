@@ -9,6 +9,8 @@
  * - Parameter validation and boundary conditions
  */
 
+import { StateHistory } from './StateHistory.js';
+
 /**
  * Represents the complete state of the balancing robot
  */
@@ -97,6 +99,16 @@ export class BalancingRobot {
         // Reward function type: 'simple' (CartPole-style) or 'complex' (angle-proportional)
         this.rewardType = config.rewardType || 'simple';
 
+        // Angle offset simulation for offset-adaptive reward learning
+        this.angleOffset = this._validateParameter(config.angleOffset, 0.0, -Math.PI/6, Math.PI/6, 'angleOffset');
+        this.offsetVariation = this._validateParameter(config.offsetVariation, 0.01, 0.0, 0.1, 'offsetVariation');
+        this.offsetChangeRate = this._validateParameter(config.offsetChangeRate, 0.001, 0.0, 0.01, 'offsetChangeRate');
+        
+        // Offset-adaptive reward learning parameters
+        this.balancePointEstimate = 0.0; // Running estimate of the true balance point
+        this.balancePointConfidence = 0.0; // Confidence in the estimate (0-1)
+        this.adaptationRate = 0.02; // How fast to adapt balance point estimate
+
         // Physical constants
         this.gravity = 9.81; // m/s²
         // For a uniform rod of length L rotating about one end: I = (1/3) * m * L^2
@@ -111,6 +123,11 @@ export class BalancingRobot {
         this.state = new RobotState();
         this.currentMotorTorque = 0;
         this.previousMotorTorque = 0; // Track previous torque for energy efficiency calculation
+        
+        // State history for multi-timestep inputs
+        this.historyTimesteps = this._validateParameter(config.historyTimesteps, 1, 1, 8, 'historyTimesteps');
+        this.stateHistory = new StateHistory(8); // Always create with max capacity
+        this.stateHistory.setTimesteps(this.historyTimesteps);
         
         // Statistics
         this.stepCount = 0;
@@ -153,6 +170,13 @@ export class BalancingRobot {
         this.previousMotorTorque = 0;
         this.stepCount = 0;
         this.totalReward = 0;
+        
+        // Reset state history
+        this.stateHistory.reset();
+        // Add initial state to history
+        const measuredAngle = this.rewardType === 'offset-adaptive' ? 
+            this.state.angle + this.angleOffset : this.state.angle;
+        this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
     }
 
     /**
@@ -251,6 +275,14 @@ export class BalancingRobot {
 
         // Set wheel velocity to match (for consistency)
         this.state.wheelVelocity = this.state.velocity / this.wheelRadius;
+        
+        // Update angle offset simulation (for offset-adaptive reward)
+        this._updateAngleOffset(dt);
+        
+        // Add current state to history
+        const measuredAngle = this.rewardType === 'offset-adaptive' ? 
+            this.getMeasuredAngle() : this.state.angle;
+        this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
     }
 
     /**
@@ -280,7 +312,7 @@ export class BalancingRobot {
             const uprightReward = 1.0 - (angleError / this.maxAngle);
             
             return uprightReward;
-        } else {
+        } else if (this.rewardType === 'efficient') {
             // ENERGY EFFICIENT REWARD: Proportional + energy penalty
             if (this.state.hasFailed(this.maxAngle)) {
                 return -10.0; // Penalty for falling
@@ -322,7 +354,97 @@ export class BalancingRobot {
             
             // Ensure reward doesn't go below a reasonable minimum
             return Math.max(totalReward, -1.0);
+        } else if (this.rewardType === 'offset-adaptive') {
+            // OFFSET-ADAPTIVE REWARD: Learns to find the true balance point despite sensor offset
+            if (this.state.hasFailed(this.maxAngle)) {
+                return -10.0; // Penalty for falling
+            }
+            
+            // Get the measured angle (with offset)
+            const measuredAngle = this.getMeasuredAngle();
+            
+            // Calculate error from estimated balance point
+            const balanceError = Math.abs(measuredAngle - this.balancePointEstimate);
+            
+            // Base reward: higher when measured angle is close to estimated balance point
+            const balanceReward = 1.0 - (balanceError / this.maxAngle);
+            
+            // Stability bonus: reward for low angular velocity (stable balancing)
+            const angularVelMagnitude = Math.abs(this.state.angularVelocity);
+            const maxStableVel = 2.0; // rad/s - threshold for "stable"
+            const stabilityBonus = Math.max(0, 0.3 * (1.0 - angularVelMagnitude / maxStableVel));
+            
+            // Discovery bonus: reward for maintaining balance in different measured angles
+            // This encourages exploration to find the true balance point
+            const discoveryBonus = this.balancePointConfidence < 0.8 ? 0.1 * balanceReward : 0.0;
+            
+            // Adaptation penalty: small penalty for changing balance point estimate too frequently
+            // This encourages stability in the estimate
+            const adaptationPenalty = 0.05 * Math.abs(this.adaptationRate);
+            
+            // Update balance point estimate based on performance
+            this._updateBalancePointEstimate(measuredAngle);
+            
+            const totalReward = balanceReward + stabilityBonus + discoveryBonus - adaptationPenalty;
+            
+            return Math.max(totalReward, -1.0);
+        } else {
+            // DEFAULT: Fall back to simple reward
+            console.warn(`Unknown reward type: ${this.rewardType}, falling back to simple reward`);
+            if (this.state.hasFailed(this.maxAngle)) {
+                return 0.0;
+            }
+            return 1.0;
         }
+    }
+
+    /**
+     * Update angle offset simulation over time
+     * @private
+     */
+    _updateAngleOffset(dt) {
+        // Slowly drift the angle offset to simulate sensor drift or weight changes
+        const driftAmount = (Math.random() - 0.5) * this.offsetChangeRate * dt;
+        this.angleOffset += driftAmount;
+        
+        // Add small random variation to simulate measurement noise
+        const noise = (Math.random() - 0.5) * this.offsetVariation;
+        this.angleOffset += noise * dt;
+        
+        // Clamp offset within reasonable bounds
+        this.angleOffset = Math.max(-Math.PI/6, Math.min(Math.PI/6, this.angleOffset));
+    }
+    
+    /**
+     * Get measured angle (true angle + offset)
+     */
+    getMeasuredAngle() {
+        return this.state.angle + this.angleOffset;
+    }
+    
+    /**
+     * Update balance point estimate based on recent performance
+     * @private
+     */
+    _updateBalancePointEstimate(measuredAngle) {
+        // Only update if the robot is relatively stable (low angular velocity)
+        const isStable = Math.abs(this.state.angularVelocity) < 1.0;
+        
+        if (isStable) {
+            // Moving average towards the current measured angle when stable
+            const alpha = this.adaptationRate;
+            this.balancePointEstimate = (1 - alpha) * this.balancePointEstimate + alpha * measuredAngle;
+            
+            // Increase confidence gradually when stable
+            this.balancePointConfidence = Math.min(1.0, this.balancePointConfidence + 0.001);
+        } else {
+            // Decrease confidence when unstable
+            this.balancePointConfidence = Math.max(0.0, this.balancePointConfidence - 0.002);
+        }
+        
+        // Ensure estimate stays within reasonable bounds
+        this.balancePointEstimate = Math.max(-this.maxAngle/2, 
+                                           Math.min(this.maxAngle/2, this.balancePointEstimate));
     }
 
     /**
@@ -348,7 +470,31 @@ export class BalancingRobot {
      * @returns {Float32Array} Normalized state inputs
      */
     getNormalizedInputs() {
-        return this.state.getNormalizedInputs(this.maxAngle);
+        // Use state history for multi-timestep inputs
+        if (this.historyTimesteps > 1) {
+            return this.stateHistory.getNormalizedInputs(this.maxAngle);
+        }
+        
+        // Single timestep behavior (backward compatibility)
+        if (this.rewardType === 'offset-adaptive') {
+            // Use measured angle (with offset) for neural network input
+            const measuredAngle = this.getMeasuredAngle();
+            const normalizedAngle = Math.max(-1, Math.min(1, measuredAngle / this.maxAngle));
+            const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.state.angularVelocity / 10));
+            return new Float32Array([normalizedAngle, normalizedAngularVelocity]);
+        } else {
+            // Use true angle for other reward functions
+            return this.state.getNormalizedInputs(this.maxAngle);
+        }
+    }
+    
+    /**
+     * Set the number of history timesteps to use
+     * @param {number} timesteps - Number of timesteps (1-8)
+     */
+    setHistoryTimesteps(timesteps) {
+        this.historyTimesteps = Math.max(1, Math.min(8, timesteps));
+        this.stateHistory.setTimesteps(this.historyTimesteps);
     }
 
     /**
@@ -425,12 +571,23 @@ export class BalancingRobot {
      * @returns {Object} Statistics object
      */
     getStats() {
-        return {
+        const stats = {
             stepCount: this.stepCount,
             totalReward: this.totalReward,
             currentMotorTorque: this.currentMotorTorque,
             simulationTime: this.stepCount * this.timestep
         };
+        
+        // Add offset-adaptive specific stats
+        if (this.rewardType === 'offset-adaptive') {
+            stats.angleOffset = this.angleOffset;
+            stats.balancePointEstimate = this.balancePointEstimate;
+            stats.balancePointConfidence = this.balancePointConfidence;
+            stats.measuredAngle = this.getMeasuredAngle();
+            stats.trueAngle = this.state.angle;
+        }
+        
+        return stats;
     }
 
     /**

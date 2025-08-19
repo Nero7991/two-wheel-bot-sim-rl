@@ -431,6 +431,9 @@ export class ParallelTrainingManager {
         // Get robot configuration
         const robotConfig = this.environment.getConfig();
         
+        // Get current timestep configuration
+        const timesteps = this.environment.historyTimesteps || 1;
+        
         // Create tasks for workers
         const tasks = [];
         for (let i = 0; i < numEpisodes; i++) {
@@ -441,6 +444,7 @@ export class ParallelTrainingManager {
                 neuralNetworkWeights: neuralNetworkWeights,
                 epsilon: this.qLearning.hyperparams.epsilon,
                 explorationEnabled: true,
+                timesteps: timesteps,
                 ...options
             });
         }
@@ -460,6 +464,15 @@ export class ParallelTrainingManager {
                     if (result.experiences) {
                         // Add experiences to main replay buffer
                         for (const experience of result.experiences) {
+                            // Validate experience state sizes match current network expectations
+                            const expectedInputSize = this.qLearning.qNetwork.getArchitecture().inputSize;
+                            
+                            if (experience.state.length !== expectedInputSize || 
+                                experience.nextState.length !== expectedInputSize) {
+                                console.warn(`Skipping experience with mismatched state size. Expected: ${expectedInputSize}, got: ${experience.state.length}`);
+                                continue;
+                            }
+                            
                             this.qLearning.replayBuffer.add(
                                 new Float32Array(experience.state),
                                 experience.action,

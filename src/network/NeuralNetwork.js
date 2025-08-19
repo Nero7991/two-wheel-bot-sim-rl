@@ -124,7 +124,7 @@ export class NeuralNetwork {
  */
 export const NetworkConfig = {
     // Architecture constraints
-    INPUT_SIZE: 2,          // Robot state: angle, angular velocity
+    INPUT_SIZE: 2,          // Base robot state: angle, angular velocity (can be 2-16 for multi-timestep)
     OUTPUT_SIZE: 3,         // Actions: left motor, right motor, brake
     MIN_HIDDEN_SIZE: 4,     // Minimum hidden layer size
     MAX_HIDDEN_SIZE: 256,   // Maximum hidden layer size (updated for DQN standards)
@@ -162,11 +162,12 @@ export function calculateParameterCount(inputSize, hiddenSize, outputSize) {
 }
 
 /**
- * Validate network architecture constraints
+ * Validate network architecture constraints (legacy - fixed input size)
  * @param {number} inputSize - Number of input neurons
  * @param {number} hiddenSize - Number of hidden neurons
  * @param {number} outputSize - Number of output neurons
  * @throws {Error} If architecture is invalid
+ * @deprecated Use validateVariableArchitecture for multi-timestep support
  */
 export function validateArchitecture(inputSize, hiddenSize, outputSize) {
     if (inputSize !== NetworkConfig.INPUT_SIZE) {

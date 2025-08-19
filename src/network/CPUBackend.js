@@ -19,7 +19,8 @@ import {
 
 /**
  * CPU-based neural network implementation
- * Architecture: Input(2) -> Hidden(4-16, ReLU) -> Output(3, Linear)
+ * Architecture: Input(2-16) -> Hidden(4-256, ReLU) -> Output(3, Linear)
+ * Supports variable input sizes for multi-timestep learning
  */
 export class CPUBackend extends NeuralNetwork {
     constructor() {
@@ -48,8 +49,8 @@ export class CPUBackend extends NeuralNetwork {
 
     /**
      * Create and initialize the neural network
-     * @param {number} inputSize - Number of input neurons (must be 2)
-     * @param {number} hiddenSize - Number of hidden neurons (4-16)
+     * @param {number} inputSize - Number of input neurons (2-16 for multi-timestep support)
+     * @param {number} hiddenSize - Number of hidden neurons (4-256)
      * @param {number} outputSize - Number of output neurons (must be 3)
      * @param {Object} options - Configuration options
      * @param {string} options.initMethod - Weight initialization method ('he', 'xavier', 'random')
@@ -57,8 +58,8 @@ export class CPUBackend extends NeuralNetwork {
      * @returns {Promise<void>} Promise that resolves when network is created
      */
     async createNetwork(inputSize, hiddenSize, outputSize, options = {}) {
-        // Validate architecture constraints
-        validateArchitecture(inputSize, hiddenSize, outputSize);
+        // Validate basic constraints (but allow variable input size)
+        this._validateVariableArchitecture(inputSize, hiddenSize, outputSize);
         
         // Set architecture
         this.inputSize = inputSize;
@@ -83,7 +84,7 @@ export class CPUBackend extends NeuralNetwork {
 
     /**
      * Perform forward pass through the network
-     * @param {Float32Array} input - Input values (angle, angular velocity)
+     * @param {Float32Array} input - Input values (multi-timestep robot state)
      * @returns {Float32Array} Output probabilities for actions
      */
     forward(input) {
@@ -243,8 +244,13 @@ export class CPUBackend extends NeuralNetwork {
             throw new Error('Network not initialized');
         }
         
-        // Create test input
-        const testInput = new Float32Array([0.1, -0.05]); // Sample robot state
+        // Create test input matching current network input size
+        const testInput = new Float32Array(this.inputSize);
+        // Fill with sample robot state values, repeating the pattern for all timesteps
+        for (let i = 0; i < this.inputSize; i += 2) {
+            testInput[i] = 0.1;      // Sample angle
+            testInput[i + 1] = -0.05; // Sample angular velocity
+        }
         
         return Performance.benchmark(
             (input) => this.forward(input),
@@ -360,5 +366,40 @@ export class CPUBackend extends NeuralNetwork {
         
         // Restore original initialization method
         this.initMethod = originalInitMethod;
+    }
+
+    /**
+     * Validate network architecture for variable input sizes
+     * @private
+     * @param {number} inputSize - Number of input neurons (2-16)
+     * @param {number} hiddenSize - Number of hidden neurons (4-256)
+     * @param {number} outputSize - Number of output neurons (must be 3)
+     */
+    _validateVariableArchitecture(inputSize, hiddenSize, outputSize) {
+        // Validate input size range (2-16 for 1-8 timesteps)
+        if (inputSize < 2 || inputSize > 16) {
+            throw new Error(`Input size must be between 2 and 16 (for 1-8 timesteps), got ${inputSize}`);
+        }
+        
+        // Input size must be even (pairs of angle/angular velocity)
+        if (inputSize % 2 !== 0) {
+            throw new Error(`Input size must be even (pairs of values), got ${inputSize}`);
+        }
+        
+        // Validate output size (must be 3 for actions)
+        if (outputSize !== NetworkConfig.OUTPUT_SIZE) {
+            throw new Error(`Output size must be ${NetworkConfig.OUTPUT_SIZE}, got ${outputSize}`);
+        }
+        
+        // Validate hidden size range
+        if (hiddenSize < NetworkConfig.MIN_HIDDEN_SIZE || hiddenSize > NetworkConfig.MAX_HIDDEN_SIZE) {
+            throw new Error(`Hidden size must be between ${NetworkConfig.MIN_HIDDEN_SIZE} and ${NetworkConfig.MAX_HIDDEN_SIZE}, got ${hiddenSize}`);
+        }
+        
+        // Check parameter count constraint
+        const paramCount = calculateParameterCount(inputSize, hiddenSize, outputSize);
+        if (paramCount > NetworkConfig.MAX_PARAMETERS) {
+            throw new Error(`Parameter count ${paramCount} exceeds maximum ${NetworkConfig.MAX_PARAMETERS}`);
+        }
     }
 }
