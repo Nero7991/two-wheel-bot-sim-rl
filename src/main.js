@@ -2008,16 +2008,14 @@ class TwoWheelBotRL {
             displayLines.push(`Current: angle=${robotState.angle.toFixed(3)}, angVel=${robotState.angularVelocity.toFixed(3)}`);
         }
         
-        // Format network input (showing all timesteps)
-        let inputStr = `Network Input [${timesteps}x]: `;
-        const inputValues = [];
+        // Format network input (showing all timesteps vertically)
+        displayLines.push(`Network Input [${timesteps}x]:`);
         for (let i = 0; i < networkInput.length; i += 2) {
             const angle = networkInput[i];
             const angVel = networkInput[i + 1];
-            inputValues.push(`[${angle.toFixed(2)}, ${angVel.toFixed(2)}]`);
+            const timestepIndex = (i / 2) + 1;
+            displayLines.push(`  T${timestepIndex}: [${angle.toFixed(2)}, ${angVel.toFixed(2)}]`);
         }
-        inputStr += inputValues.join(', ');
-        displayLines.push(inputStr);
         
         // Show timestep info
         displayLines.push(`Timesteps: ${timesteps} (${networkInput.length} inputs total)`);

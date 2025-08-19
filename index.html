@@ -739,13 +739,6 @@
                             <input type="range" id="history-timesteps" min="1" max="8" value="1" step="1">
                         </div>
                         
-                        <div class="debug-display" id="history-debug" style="font-family: 'Courier New', monospace; font-size: 0.75rem; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px;">
-                            <div style="color: #00d4ff; margin-bottom: 4px;">History Values Debug:</div>
-                            <div id="history-debug-content" style="color: #fff;">
-                                <div>Current: angle=+0.000, angVel=+0.000</div>
-                                <div>Network Input: [+0.00, +0.00]</div>
-                            </div>
-                        </div>
                         
                     </div>
                 </div>
@@ -1019,7 +1012,7 @@
                 </div>
                 
                 <div class="control-section collapsed">
-                    <h3>Debug Controls</h3>
+                    <h3>Debug</h3>
                     <div class="control-section-content">
                         <div class="parameter-group">
                             <h4>Real-time Feedback</h4>
@@ -1028,6 +1021,14 @@
                                 <div>Current Reward: <span id="debug-current-reward">0.000</span></div>
                                 <div>Robot Angle: <span id="debug-robot-angle">0.00°</span></div>
                                 <div>Robot AngVel: <span id="debug-angular-velocity">0.00 rad/s</span></div>
+                            </div>
+                            
+                            <div class="debug-display" id="history-debug" style="font-family: 'Courier New', monospace; font-size: 0.75rem; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-top: 8px;">
+                                <div style="color: #00d4ff; margin-bottom: 4px;">History Values Debug:</div>
+                                <div id="history-debug-content" style="color: #fff;">
+                                    <div>Current: angle=+0.000, angVel=+0.000</div>
+                                    <div>Network Input:<br>[+0.00, +0.00]</div>
+                                </div>
                             </div>
                         </div>
                     </div>
