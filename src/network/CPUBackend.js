@@ -325,8 +325,12 @@ export class CPUBackend extends NeuralNetwork {
         const clone = new CPUBackend();
         
         if (this.isInitialized) {
+            // Use He initialization for cloned network instead of preserving 'imported' method
+            const cloneInitMethod = (this.initMethod === 'imported') ? 
+                NetworkConfig.INITIALIZATION.HE : this.initMethod;
+                
             clone.createNetwork(this.inputSize, this.hiddenSize, this.outputSize, {
-                initMethod: this.initMethod
+                initMethod: cloneInitMethod
             });
             clone.setWeights(this.getWeights());
         }
@@ -342,6 +346,19 @@ export class CPUBackend extends NeuralNetwork {
             throw new Error('Network not initialized');
         }
         
+        // Save original initialization method
+        const originalInitMethod = this.initMethod;
+        
+        // Use He initialization for reset if current method is not supported
+        if (this.initMethod === 'imported' || !this.initMethod || 
+            (this.initMethod !== NetworkConfig.INITIALIZATION.HE && 
+             this.initMethod !== NetworkConfig.INITIALIZATION.XAVIER)) {
+            this.initMethod = NetworkConfig.INITIALIZATION.HE;
+        }
+        
         this._initializeWeights();
+        
+        // Restore original initialization method
+        this.initMethod = originalInitMethod;
     }
 }

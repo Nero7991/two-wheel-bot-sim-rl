@@ -692,12 +692,13 @@
                         </div>
                         
                         <div class="slider-container">
-                            <label for="reward-function" class="tooltip" data-tooltip="Choose reward function: CartPole gives +1 for balance, Proportional gives scaled rewards">
+                            <label for="reward-function" class="tooltip" data-tooltip="Choose reward function: CartPole gives +1 for balance, Proportional gives scaled rewards, Energy Efficient penalizes unnecessary motor usage">
                                 Reward Function:
                             </label>
                             <select id="reward-function" style="width: 100%; padding: 4px; margin-top: 4px;">
                                 <option value="simple">CartPole (Binary: +1 or 0)</option>
                                 <option value="complex" selected>Proportional (Angle-based)</option>
+                                <option value="efficient">Energy Efficient (Proportional + Torque Penalty)</option>
                             </select>
                         </div>
                         

@@ -603,11 +603,15 @@ export class QLearning {
             this.consecutiveMaxEpisodes = 0; // Reset counter if episode didn't reach max steps
         }
         
-        // Check for training completion (20 consecutive episodes reaching max steps)
-        if (this.consecutiveMaxEpisodes >= 20 && !this.trainingCompleted) {
-            this.trainingCompleted = true;
-            console.log(`🏆 TRAINING COMPLETED! Model consistently balanced for 20 consecutive episodes of ${this.hyperparams.maxStepsPerEpisode} steps.`);
-        }
+        // Note: Auto-completion logic removed to allow continuous efficiency learning
+        // The robot can continue learning to be more efficient even after achieving basic balance
+        // Training will only stop when user manually stops or reaches the episode limit
+        // 
+        // Previously: Auto-completed after 20 consecutive max-step episodes
+        // if (this.consecutiveMaxEpisodes >= 20 && !this.trainingCompleted) {
+        //     this.trainingCompleted = true;
+        //     console.log(`🏆 TRAINING COMPLETED! Model consistently balanced for 20 consecutive episodes...`);
+        // }
         
         // Record metrics
         this.metrics.addEpisode(totalReward, stepCount, avgLoss, this.hyperparams.epsilon);

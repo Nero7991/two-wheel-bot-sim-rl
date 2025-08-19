@@ -468,9 +468,13 @@ class UIControls {
                         this.app.pauseTraining();
                     }
                     break;
-                case 's': // S - start training
+                case 's': // S - start/stop training
                     e.preventDefault();
-                    this.app.startTraining();
+                    if (this.app.isTraining) {
+                        this.app.stopTraining();
+                    } else {
+                        this.app.startTraining();
+                    }
                     break;
                 case 'r': // R - reset environment
                     e.preventDefault();
@@ -818,8 +822,8 @@ class TwoWheelBotRL {
             mode: 'interval' // Use setInterval for consistent 60 FPS
         });
         
-        // Application state
-        this.isTraining = false;
+        // Application state with debugging
+        this._isTraining = false;
         this.isPaused = false;
         this.trainingStep = 0;
         this.episodeCount = 0;
@@ -948,6 +952,18 @@ class TwoWheelBotRL {
         }
     }
 
+    // Add debugging getter and setter for isTraining to track when it changes
+    get isTraining() {
+        return this._isTraining;
+    }
+
+    set isTraining(value) {
+        if (this._isTraining !== value) {
+            console.log(`🔄 isTraining changed from ${this._isTraining} to ${value}`, new Error().stack);
+        }
+        this._isTraining = value;
+    }
+
     initializeRenderer() {
         this.canvas = document.getElementById('simulation-canvas');
         if (!this.canvas) {
@@ -1041,7 +1057,11 @@ class TwoWheelBotRL {
     initializeControls() {
         // Training controls
         document.getElementById('start-training').addEventListener('click', () => {
-            this.startTraining();
+            if (this.isTraining) {
+                this.stopTraining();
+            } else {
+                this.startTraining();
+            }
         });
         
         document.getElementById('pause-training').addEventListener('click', () => {
@@ -1225,13 +1245,87 @@ class TwoWheelBotRL {
         
         this.startNewEpisode();
         
-        document.getElementById('start-training').disabled = true;
+        // Update start button to become stop button
+        const startButton = document.getElementById('start-training');
+        startButton.textContent = 'Stop Training';
+        startButton.classList.remove('primary');
+        startButton.classList.add('danger');
+        startButton.disabled = false;
+        
         document.getElementById('pause-training').disabled = false;
         
         // Update PD controller UI (disabled during training)
         this.updatePDControllerUI();
         
         console.log('Training started');
+    }
+
+    stopTraining() {
+        if (!this.isTraining) return;
+        
+        // Stop training
+        this.isTraining = false;
+        this.isPaused = false;
+        this.demoMode = 'freerun';
+        
+        // Reset training metrics while preserving the model
+        this.episodeCount = 0;
+        this.trainingStep = 0;
+        this.bestScore = 0;
+        this.currentReward = 0;
+        
+        // Reset Q-learning training state but keep the trained weights
+        if (this.qlearning) {
+            // Reset training counters and epsilon without resetting weights
+            this.qlearning.episode = 0;
+            this.qlearning.stepCount = 0;
+            this.qlearning.globalStepCount = 0;
+            this.qlearning.lastTargetUpdate = 0;
+            
+            // Reset epsilon to initial value for potential restart
+            this.qlearning.hyperparams.epsilon = this.qlearning.initialEpsilon || 0.9;
+            
+            // Clear replay buffer
+            this.qlearning.replayBuffer.clear();
+        }
+        
+        // Reset performance tracking
+        if (this.performanceTracker) {
+            this.performanceTracker.reset();
+        }
+        
+        // Clear performance charts if reset method exists
+        if (this.performanceCharts && typeof this.performanceCharts.reset === 'function') {
+            this.performanceCharts.reset();
+        }
+        
+        // Reset previous training state
+        this.previousState = null;
+        this.previousAction = undefined;
+        this.previousReward = 0;
+        this.previousDone = false;
+        this.lastTrainingLoss = 0;
+        
+        // Update UI buttons
+        const startButton = document.getElementById('start-training');
+        const pauseButton = document.getElementById('pause-training');
+        
+        startButton.textContent = 'Start Training';
+        startButton.classList.remove('danger');
+        startButton.classList.add('primary');
+        
+        pauseButton.textContent = 'Pause Training';
+        pauseButton.disabled = true;
+        
+        // Update training status display
+        this.updateTrainingModelDisplay();
+        this.updatePDControllerUI();
+        this.updateUserControlOnlyUI();
+        
+        // Reset robot to clean state
+        this.robot.reset();
+        
+        console.log('Training stopped and reset');
     }
 
     pauseTraining() {
@@ -1599,6 +1693,29 @@ class TwoWheelBotRL {
             const result = this.robot.step(motorTorque);
             robotStepTime += performance.now() - robotStepStart;
             this.currentReward = result.reward;
+            
+            // Check for physics instability that could cause silent training failures
+            if (!this.robot.isStable() || !isFinite(result.reward)) {
+                console.error('Physics simulation became unstable:', {
+                    robotState: this.robot.getState(),
+                    reward: result.reward,
+                    motorTorque: motorTorque,
+                    episode: this.episodeCount,
+                    step: this.trainingStep
+                });
+                
+                if (this.demoMode === 'training' && this.isTraining) {
+                    // Force episode end due to instability
+                    console.warn('Ending episode due to physics instability');
+                    this.episodeEnded = true;
+                    this.handleEpisodeEnd({
+                        ...result,
+                        done: true,
+                        reward: -10.0 // Penalty for instability
+                    });
+                    return;
+                }
+            }
             
             // Update debug reward display during manual control modes and evaluation
             if (this.demoMode === 'freerun') {
@@ -2196,14 +2313,38 @@ class TwoWheelBotRL {
      * Decide whether to run single episode or parallel batch
      */
     async startNextEpisodeOrBatch() {
-        // Check if parallel training is available and beneficial
-        const shouldUseParallel = this.shouldUseParallelTraining();
-        
-        if (shouldUseParallel) {
-            // Pure parallel training - let workers handle everything for maximum speed
+        try {
+            // Check if parallel training is available and beneficial
+            const shouldUseParallel = this.shouldUseParallelTraining();
+            
+            if (shouldUseParallel) {
+                // Pure parallel training - let workers handle everything for maximum speed
                 await this.runParallelEpisodeBatch();
-        } else {
+            } else {
                 this.startNewEpisode();
+            }
+        } catch (error) {
+            console.error('Critical training error in startNextEpisodeOrBatch:', error);
+            
+            // Reset training state to prevent getting stuck
+            this.isTraining = false;
+            this.isPaused = false;
+            
+            // Update UI to reflect stopped state
+            const startButton = document.getElementById('start-training');
+            const pauseButton = document.getElementById('pause-training');
+            
+            if (startButton) startButton.disabled = false;
+            if (pauseButton) {
+                pauseButton.disabled = true;
+                pauseButton.textContent = 'Pause Training';
+            }
+            
+            // Update training display
+            this.updateTrainingModelDisplay();
+            
+            // Show error to user
+            alert('Training stopped due to an error. Please check the console for details and try starting training again.');
         }
     }
     
@@ -2379,12 +2520,6 @@ class TwoWheelBotRL {
                 this.qlearning.updateTargetNetwork();
             }
             
-            // Check for training completion
-            if (this.qlearning && this.qlearning.trainingCompleted) {
-                this.pauseTraining();
-                console.log(`🏆 Training automatically completed during parallel batch!`);
-                return;
-            }
             
             // Update statistics for logging
             const avgReward = totalReward / results.length;
@@ -2504,13 +2639,6 @@ class TwoWheelBotRL {
             // Update performance metrics display
             this.updatePerformanceMetricsDisplay();
             
-            // Check for training completion before auto-pause
-            if (this.qlearning && this.qlearning.trainingCompleted) {
-                this.pauseTraining();
-                console.log(`🏆 Training automatically completed! Model has consistently balanced for 20 consecutive episodes.`);
-                alert(`🏆 Training Successfully Completed!\n\nYour model has consistently balanced for 20 consecutive episodes of 8,000 steps each.\n\nThe robot is now fully trained and ready for deployment!`);
-                return; // Exit early to prevent auto-pause at 10k episodes
-            }
             
             
             // Update performance charts with episode completion data
@@ -2531,8 +2659,45 @@ class TwoWheelBotRL {
             
             // Start next episode after brief pause
             setTimeout(() => {
-                if (this.isTraining) {
-                    this.startNextEpisodeOrBatch();
+                try {
+                    console.log(`🔄 Episode ${this.episodeCount} completed. Training state: isTraining=${this.isTraining}, isPaused=${this.isPaused}`);
+                    if (this.isTraining) {
+                        console.log(`✅ Starting next episode/batch...`);
+                        this.startNextEpisodeOrBatch();
+                    } else {
+                        console.warn(`⚠️ Training stopped unexpectedly! isTraining=${this.isTraining}, isPaused=${this.isPaused}`);
+                        // This is where the bug might be - training stopped but UI not updated
+                        // Force UI update to reflect actual state
+                        const startButton = document.getElementById('start-training');
+                        const pauseButton = document.getElementById('pause-training');
+                        
+                        if (startButton) startButton.disabled = false;
+                        if (pauseButton) {
+                            pauseButton.disabled = true;
+                            pauseButton.textContent = 'Pause Training';
+                        }
+                        
+                        this.updateTrainingModelDisplay();
+                        console.log('🛠️ UI state corrected to match actual training state');
+                    }
+                } catch (error) {
+                    console.error('Error in setTimeout callback for next episode:', error);
+                    // Reset training state if error occurs
+                    this.isTraining = false;
+                    this.isPaused = false;
+                    
+                    // Update UI
+                    const startButton = document.getElementById('start-training');
+                    const pauseButton = document.getElementById('pause-training');
+                    
+                    if (startButton) startButton.disabled = false;
+                    if (pauseButton) {
+                        pauseButton.disabled = true;
+                        pauseButton.textContent = 'Pause Training';
+                    }
+                    
+                    this.updateTrainingModelDisplay();
+                    alert('Training stopped due to an error. Please check the console and try starting training again.');
                 }
             }, 100);
         } else {

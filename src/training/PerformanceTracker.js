@@ -98,6 +98,18 @@ export class TrainingPerformanceTracker {
         
         this.episodeTimes = this.episodeTimes.filter(ep => ep.timestamp > cutoff);
         this.stepTimes = this.stepTimes.filter(step => step > cutoff);
+        
+        // Additional safety: limit array sizes to prevent memory/performance issues
+        const MAX_EPISODE_SAMPLES = 1000;
+        const MAX_STEP_SAMPLES = 10000;
+        
+        if (this.episodeTimes.length > MAX_EPISODE_SAMPLES) {
+            this.episodeTimes = this.episodeTimes.slice(-MAX_EPISODE_SAMPLES);
+        }
+        
+        if (this.stepTimes.length > MAX_STEP_SAMPLES) {
+            this.stepTimes = this.stepTimes.slice(-MAX_STEP_SAMPLES);
+        }
     }
     
     /**
@@ -110,14 +122,17 @@ export class TrainingPerformanceTracker {
         // Calculate episodes per minute
         const recentEpisodes = this.episodeTimes.filter(ep => ep.timestamp > windowStart);
         if (recentEpisodes.length > 0) {
-            const timeSpan = (now - Math.min(...recentEpisodes.map(ep => ep.timestamp))) / 1000 / 60; // minutes
+            const episodeTimestamps = recentEpisodes.map(ep => ep.timestamp);
+            const minTimestamp = Math.min.apply(Math, episodeTimestamps);
+            const timeSpan = (now - minTimestamp) / 1000 / 60; // minutes
             this.currentEpisodesPerMinute = timeSpan > 0 ? recentEpisodes.length / timeSpan : 0;
         }
         
         // Calculate steps per second
         const recentSteps = this.stepTimes.filter(step => step > windowStart);
         if (recentSteps.length > 0) {
-            const timeSpan = (now - Math.min(...recentSteps)) / 1000; // seconds
+            const minStepTime = Math.min.apply(Math, recentSteps);
+            const timeSpan = (now - minStepTime) / 1000; // seconds
             this.currentStepsPerSecond = timeSpan > 0 ? recentSteps.length / timeSpan : 0;
         }
         

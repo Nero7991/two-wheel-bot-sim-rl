@@ -14,7 +14,7 @@ export class SystemCapabilities {
     constructor() {
         this.coreCount = this.detectCores();
         this.targetCores = Math.max(1, Math.floor(this.coreCount * 0.5)); // Use 50% of cores
-        this.maxWorkers = Math.min(this.targetCores, 8); // Cap at 8 workers for stability
+        this.maxWorkers = Math.min(this.targetCores, 64); // Cap at 64 workers for extreme performance
         
         console.log(`System Detection:`);
         console.log(`- Total CPU cores: ${this.coreCount}`);

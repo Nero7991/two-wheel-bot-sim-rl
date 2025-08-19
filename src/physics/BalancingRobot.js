@@ -110,6 +110,7 @@ export class BalancingRobot {
         // Initialize state
         this.state = new RobotState();
         this.currentMotorTorque = 0;
+        this.previousMotorTorque = 0; // Track previous torque for energy efficiency calculation
         
         // Statistics
         this.stepCount = 0;
@@ -149,6 +150,7 @@ export class BalancingRobot {
             initialState.wheelVelocity || 0
         );
         this.currentMotorTorque = 0;
+        this.previousMotorTorque = 0;
         this.stepCount = 0;
         this.totalReward = 0;
     }
@@ -168,6 +170,9 @@ export class BalancingRobot {
             };
         }
 
+        // Store previous torque for energy efficiency calculation
+        this.previousMotorTorque = this.currentMotorTorque;
+        
         // Scale motor torque by the configurable range, then clamp to motor strength
         const scaledTorque = motorTorque * this.motorTorqueRange;
         this.currentMotorTorque = Math.max(-this.motorStrength, Math.min(this.motorStrength, scaledTorque));
@@ -263,7 +268,7 @@ export class BalancingRobot {
                 return 0.0; // No reward for falling
             }
             return 1.0; // Reward for staying upright
-        } else {
+        } else if (this.rewardType === 'complex') {
             // COMPLEX REWARD: Angle-proportional reward with failure penalty
             if (this.state.hasFailed(this.maxAngle)) {
                 return -10.0; // Penalty for falling in complex mode
@@ -275,6 +280,48 @@ export class BalancingRobot {
             const uprightReward = 1.0 - (angleError / this.maxAngle);
             
             return uprightReward;
+        } else {
+            // ENERGY EFFICIENT REWARD: Proportional + energy penalty
+            if (this.state.hasFailed(this.maxAngle)) {
+                return -10.0; // Penalty for falling
+            }
+            
+            const angleError = Math.abs(this.state.angle);
+            
+            // Base proportional reward: 1.0 when upright, 0.0 when at failure angle
+            const uprightReward = 1.0 - (angleError / this.maxAngle);
+            
+            // Energy efficiency penalties
+            const maxTorque = this.motorStrength;
+            
+            // Safety check for division by zero
+            if (maxTorque <= 0) {
+                console.warn('Invalid motor strength for energy efficient reward, falling back to proportional');
+                return uprightReward;
+            }
+            
+            // 1. Torque magnitude penalty (encourage minimal torque usage)
+            const torqueMagnitude = Math.abs(this.currentMotorTorque);
+            const torquePenalty = 0.1 * (torqueMagnitude / maxTorque); // 0.1 weight for torque penalty
+            
+            // 2. Torque change penalty (discourage chattering/rapid changes)
+            const torqueChange = Math.abs(this.currentMotorTorque - this.previousMotorTorque);
+            const chatterPenalty = 0.05 * (torqueChange / maxTorque); // 0.05 weight for chatter penalty
+            
+            // 3. Smoothness bonus for small torque changes (encourage stability)
+            const smoothnessBonus = torqueChange < (0.1 * maxTorque) ? 0.02 : 0.0; // Small bonus for smooth control
+            
+            // Combine rewards: upright reward - energy penalties + smoothness bonus
+            const totalReward = uprightReward - torquePenalty - chatterPenalty + smoothnessBonus;
+            
+            // Safety checks for numerical stability
+            if (!isFinite(totalReward)) {
+                console.warn('Non-finite reward calculated, falling back to proportional');
+                return uprightReward;
+            }
+            
+            // Ensure reward doesn't go below a reasonable minimum
+            return Math.max(totalReward, -1.0);
         }
     }
 
@@ -391,17 +438,17 @@ export class BalancingRobot {
      * @param {string} type - 'simple' (CartPole-style) or 'complex' (angle-proportional)
      */
     setRewardType(type) {
-        if (type === 'simple' || type === 'complex') {
+        if (type === 'simple' || type === 'complex' || type === 'efficient') {
             this.rewardType = type;
             console.log(`Reward function changed to: ${type}`);
         } else {
-            console.warn(`Invalid reward type: ${type}. Use 'simple' or 'complex'`);
+            console.warn(`Invalid reward type: ${type}. Use 'simple', 'complex', or 'efficient'`);
         }
     }
     
     /**
      * Get current reward type
-     * @returns {string} Current reward type ('simple' or 'complex')
+     * @returns {string} Current reward type ('simple', 'complex', or 'efficient')
      */
     getRewardType() {
         return this.rewardType;
