@@ -30,7 +30,7 @@ class UIControls {
             hiddenNeurons: 8,
             
             // Core Learning Parameters
-            learningRate: 0.0003,
+            learningRate: 0.0020,
             gamma: 0.99,
             
             // Exploration Parameters
@@ -115,14 +115,11 @@ class UIControls {
         document.getElementById('speed-50x').addEventListener('click', () => {
             this.setSpeedPreset(50.0);
         });
-        document.getElementById('speed-100x').addEventListener('click', () => {
-            this.setSpeedPreset(100.0);
+        document.getElementById('speed-20x').addEventListener('click', () => {
+            this.setSpeedPreset(20.0);
         });
-        document.getElementById('speed-200x').addEventListener('click', () => {
-            this.setSpeedPreset(200.0);
-        });
-        document.getElementById('speed-1000x').addEventListener('click', () => {
-            this.setSpeedPreset(1000.0);
+        document.getElementById('speed-parallel').addEventListener('click', () => {
+            this.enableParallelTraining();
         });
         
         // Debug speed control for manual testing
@@ -491,10 +488,6 @@ class UIControls {
                     e.preventDefault();
                     this.app.switchDemoMode('evaluation');
                     break;
-                case '4': // 4 - toggle user control (arrows)
-                    e.preventDefault();
-                    this.app.toggleUserControl();
-                    break;
                 case 'h': // H - toggle help/debug info
                     e.preventDefault();
                     this.app.renderer.toggleUI('robot');
@@ -512,17 +505,23 @@ class UIControls {
                     e.preventDefault();
                     this.app.manualControl.leftPressed = true;
                     this.app.updateManualTorque();
+                    // Add visual feedback to on-screen button
+                    document.getElementById('control-left')?.classList.add('active');
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
                     this.app.manualControl.rightPressed = true;
                     this.app.updateManualTorque();
+                    // Add visual feedback to on-screen button
+                    document.getElementById('control-right')?.classList.add('active');
                     break;
                 case 'ArrowUp':
                     e.preventDefault();
                     if (!this.app.isTraining) {
                         this.app.resetRobotPosition();
                     }
+                    // Add visual feedback to on-screen button
+                    document.getElementById('control-reset')?.classList.add('active');
                     break;
             }
         });
@@ -536,11 +535,20 @@ class UIControls {
                     e.preventDefault();
                     this.app.manualControl.leftPressed = false;
                     this.app.updateManualTorque();
+                    // Remove visual feedback from on-screen button
+                    document.getElementById('control-left')?.classList.remove('active');
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
                     this.app.manualControl.rightPressed = false;
                     this.app.updateManualTorque();
+                    // Remove visual feedback from on-screen button
+                    document.getElementById('control-right')?.classList.remove('active');
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    // Remove visual feedback from on-screen button
+                    document.getElementById('control-reset')?.classList.remove('active');
                     break;
             }
         });
@@ -650,7 +658,21 @@ class UIControls {
         document.getElementById('training-speed').value = speed;
         document.getElementById('training-speed-value').textContent = `${speed.toFixed(1)}x`;
         this.app.setTrainingSpeed(speed);
+        this.parallelModeEnabled = false; // Disable parallel mode when setting speed preset
+        this.app.setParallelMode(false);
         console.log(`Speed preset set to ${speed}x`);
+    }
+    
+    enableParallelTraining() {
+        this.parallelModeEnabled = true;
+        document.getElementById('training-speed-value').textContent = 'Parallel Mode';
+        this.app.setParallelMode(true);
+        console.log('Parallel training mode enabled');
+        
+        // If currently training, switch to parallel immediately
+        if (this.isTraining) {
+            console.log('Switching current training to parallel mode');
+        }
     }
     
     resetToDefaults() {
@@ -659,7 +681,7 @@ class UIControls {
             hiddenNeurons: 8,
             
             // Core Learning Parameters
-            learningRate: 0.0003,
+            learningRate: 0.0020,
             gamma: 0.99,
             
             // Exploration Parameters
@@ -799,7 +821,6 @@ class TwoWheelBotRL {
         // Application state
         this.isTraining = false;
         this.isPaused = false;
-        this.isHybridTraining = false; // Track when running both main thread + workers
         this.trainingStep = 0;
         this.episodeCount = 0;
         this.bestScore = 0;
@@ -810,6 +831,7 @@ class TwoWheelBotRL {
         this.trainingSpeed = 1.0;
         this.targetPhysicsStepsPerFrame = 1;
         this.episodeEnded = false; // Flag to prevent multiple episode end calls
+        this.parallelModeEnabled = false; // Track if parallel training is manually enabled
         
         // Debug control speed
         this.debugSpeed = 1.0;
@@ -817,7 +839,7 @@ class TwoWheelBotRL {
         this.debugCurrentReward = 0;
         
         // Demo modes
-        this.demoMode = 'physics'; // 'physics', 'training', 'evaluation', 'manual'
+        this.demoMode = 'freerun'; // 'freerun', 'training'
         
         // Model management state
         this.currentModelName = 'No model loaded';
@@ -840,7 +862,7 @@ class TwoWheelBotRL {
         this.pdControllerEnabled = true; // Start enabled in physics mode
         
         // User control toggle state (separate from manual mode)
-        this.userControlEnabled = false;
+        this.userControlEnabled = true; // Always enabled in free run mode
         
         // Network architecture (will be set by UI)
         this.currentNetworkArchitecture = null;
@@ -908,8 +930,7 @@ class TwoWheelBotRL {
             
             // Initialize UI state
             this.updatePDControllerUI();
-            this.updateUserControlUI();
-            this.updateRewardTypeUI();
+            this.updateFreeRunSpeedUI();
             this.updateModelDisplay('No model loaded', null);
             
             this.isInitialized = true;
@@ -1048,8 +1069,7 @@ class TwoWheelBotRL {
         });
         
         document.getElementById('test-model-btn')?.addEventListener('click', () => {
-            this.switchDemoMode('evaluation');
-            console.log('Testing trained model');
+            this.testModel();
         });
         
         document.getElementById('export-model').addEventListener('click', () => {
@@ -1097,14 +1117,14 @@ class TwoWheelBotRL {
         });
         
         // User Control toggle
-        document.getElementById('toggle-user-control')?.addEventListener('click', () => {
-            this.toggleUserControl();
+        
+        // Reward Function dropdown
+        document.getElementById('reward-function')?.addEventListener('change', (e) => {
+            this.setRewardFunction(e.target.value);
         });
         
-        // Reward Type toggle
-        document.getElementById('toggle-reward-type')?.addEventListener('click', () => {
-            this.toggleRewardType();
-        });
+        // On-screen controls for free run mode
+        this.setupOnScreenControls();
         
         // Setup collapsible sections
         this.setupCollapsibleSections();
@@ -1173,6 +1193,7 @@ class TwoWheelBotRL {
         this.isTraining = true;
         this.isPaused = false;
         this.demoMode = 'training';
+        this.updateFreeRunSpeedUI();
         
         // Track training start time for model naming
         this.trainingStartTime = new Date();
@@ -1221,34 +1242,74 @@ class TwoWheelBotRL {
     }
 
     resetEnvironment() {
+        // Stop all training and parallel processing
         this.isTraining = false;
         this.isPaused = false;
-        this.isHybridTraining = false;
+        this.parallelModeEnabled = false;
+        this.demoMode = 'freerun'; // Reset to free run mode
+        
+        // Reset all training counters and metrics
         this.trainingStep = 0;
         this.episodeCount = 0;
         this.bestScore = 0;
         this.currentReward = 0;
+        this.episodeEnded = false;
         
-        // Reset robot state
+        // Reset Q-learning training state
+        this.previousState = null;
+        this.previousAction = undefined;
+        this.previousReward = 0;
+        this.previousDone = false;
+        this.lastTrainingLoss = 0;
+        
+        // Reset Q-learning if it exists
+        if (this.qlearning) {
+            this.qlearning.reset();
+            console.log('Q-learning network reset');
+        }
+        
+        // Reset parallel training if it exists
+        if (this.parallelQLearning) {
+            this.parallelQLearning.cleanup();
+            this.parallelQLearning = null;
+            console.log('Parallel training system reset');
+        }
+        
+        // Reset performance charts
+        if (this.performanceCharts) {
+            this.performanceCharts.reset();
+            console.log('Performance charts reset');
+        }
+        
+        // Reset robot state to perfectly balanced
         if (this.robot) {
             this.robot.reset({
-                angle: (Math.random() - 0.5) * 0.1,
+                angle: 0, // Perfectly balanced instead of random
                 angularVelocity: 0,
                 position: 0,
                 velocity: 0
             });
         }
         
+        // Reset UI states
         document.getElementById('start-training').disabled = false;
         document.getElementById('pause-training').disabled = true;
         document.getElementById('pause-training').textContent = 'Pause Training';
         
-        // Update PD controller UI (re-enabled after training stops)
-        this.updatePDControllerUI();
+        // Reset parallel training UI
+        const parallelBtn = document.getElementById('parallel-training');
+        if (parallelBtn) {
+            parallelBtn.textContent = 'Parallel';
+            parallelBtn.classList.remove('active');
+        }
         
+        // Update various UI components
+        this.updateFreeRunSpeedUI();
+        this.updatePDControllerUI();
+        this.updateOnScreenControlsVisibility();
         this.updateUI();
         
-        console.log('Environment reset');
+        console.log('Environment completely reset - all training state cleared');
     }
 
     resizeCanvas() {
@@ -1400,13 +1461,15 @@ class TwoWheelBotRL {
         }
         this.lastFrameTime = timestamp;
         
-        // Update physics at appropriate intervals based on mode and training speed
+        // Update physics at appropriate intervals based on mode and speed
         let updateInterval;
-        if (this.demoMode === 'manual' || this.demoMode === 'physics' || this.demoMode === 'evaluation') {
-            // For user interaction and evaluation modes, run physics every frame for smooth motion
-            updateInterval = 0; // No throttling - run every frame for smooth visual experience
-        } else if (this.demoMode === 'training' && this.trainingSpeed > 100) {
-            // For high-speed training, run physics as fast as possible
+        if (this.demoMode === 'freerun') {
+            // Free run mode: controlled by debugSpeed (Free Run Speed slider)
+            // debugSpeed ranges from 0.1x to 2x, so adjust interval accordingly
+            // Base interval is 16.67ms (60fps), adjust inversely with speed
+            updateInterval = Math.max(1, 16.67 / this.debugSpeed);
+        } else if (this.demoMode === 'training' && (this.parallelModeEnabled || this.trainingSpeed > 100)) {
+            // For parallel mode or high-speed training, run physics as fast as possible
             updateInterval = 0; // No throttling - run every frame
         } else {
             // Normal throttling for low/medium speeds in training mode only
@@ -1416,8 +1479,9 @@ class TwoWheelBotRL {
         if (timestamp - this.lastPhysicsUpdate >= updateInterval) {
             await this.updatePhysics();
             
-            // Smart rendering - skip rendering during high-speed training
-            const shouldRender = this.smartRenderingManager.shouldRenderFrame(this.trainingSpeed);
+            // Smart rendering - skip rendering during high-speed training or parallel mode
+            const effectiveSpeed = this.parallelModeEnabled ? 1000 : this.trainingSpeed;
+            const shouldRender = this.smartRenderingManager.shouldRenderFrame(effectiveSpeed);
             if (shouldRender) {
                 this.updateRenderer();
                 this.updateUI();
@@ -1432,10 +1496,16 @@ class TwoWheelBotRL {
         
         const physicsStartTime = performance.now();
         
-        // Run multiple physics steps per frame for training speed control
-        // Dynamic step limiting based on training speed and rendering mode
+        // Run multiple physics steps per frame for speed control
         let maxStepsPerFrame;
-        if (this.trainingSpeed <= 100) {
+        if (this.demoMode === 'freerun') {
+            // Free run mode: controlled by debugSpeed (Free Run Speed slider)
+            // debugSpeed ranges from 0.1x to 2x
+            maxStepsPerFrame = Math.max(1, Math.round(this.debugSpeed * 3)); // 1-6 steps based on speed
+        } else if (this.parallelModeEnabled) {
+            // Parallel mode: main thread runs at maximum speed regardless of slider
+            maxStepsPerFrame = 1000; // Max speed for parallel training
+        } else if (this.trainingSpeed <= 100) {
             // For speeds ≤100x, ensure minimum steps for smooth motion (continuous rendering active)
             maxStepsPerFrame = Math.max(3, this.targetPhysicsStepsPerFrame);
         } else if (this.trainingSpeed <= 200) {
@@ -1474,12 +1544,17 @@ class TwoWheelBotRL {
             
             // Get motor torque based on current mode
             switch (this.demoMode) {
-                case 'physics':
-                    // In physics mode: user arrows take precedence over PD controller
-                    if (this.userControlEnabled && (this.manualControl.leftPressed || this.manualControl.rightPressed)) {
+                case 'freerun':
+                    // Free run mode: user arrows take precedence, then PD controller, then model control
+                    if (this.manualControl.leftPressed || this.manualControl.rightPressed) {
                         motorTorque = this.getManualTorque();
                     } else if (this.pdControllerEnabled) {
                         motorTorque = this.getPhysicsDemoTorque();
+                    } else if (this.qlearning) {
+                        // Model control available if model loaded
+                        motorTorque = this.getEvaluationTorque();
+                    } else {
+                        motorTorque = 0; // No control active
                     }
                     break;
                 case 'training':
@@ -1496,25 +1571,6 @@ class TwoWheelBotRL {
                         }
                     }
                     break;
-                case 'evaluation':
-                    // Allow user control override during evaluation for robustness testing
-                    if (this.userControlEnabled && (this.manualControl.leftPressed || this.manualControl.rightPressed)) {
-                        motorTorque = this.getManualTorque();
-                        this.debugLastAction = `User: ${motorTorque.toFixed(2)}`;
-                    } else {
-                        motorTorque = this.getEvaluationTorque();
-                    }
-                    break;
-                case 'manual':
-                    // Manual mode: arrows take precedence over PD controller
-                    if (this.manualControl.leftPressed || this.manualControl.rightPressed) {
-                        motorTorque = this.getManualTorque();
-                    } else if (this.pdControllerEnabled) {
-                        motorTorque = this.getPhysicsDemoTorque();
-                    } else {
-                        motorTorque = this.getManualTorque(); // This will be 0 if no keys pressed
-                    }
-                    break;
             }
             
             // Step physics simulation
@@ -1524,7 +1580,7 @@ class TwoWheelBotRL {
             this.currentReward = result.reward;
             
             // Update debug reward display during manual control modes and evaluation
-            if (this.demoMode === 'manual' || this.demoMode === 'physics' || this.demoMode === 'evaluation') {
+            if (this.demoMode === 'freerun') {
                 this.debugCurrentReward = result.reward;
             }
             
@@ -1579,7 +1635,7 @@ class TwoWheelBotRL {
             
             // Handle episode completion for training/evaluation (only once per episode)
             // Skip episode completion when training is paused to prevent falling/resetting
-            if (result.done && (this.demoMode === 'training' || this.demoMode === 'evaluation') && !this.isPaused && !this.episodeEnded) {
+            if (result.done && (this.demoMode === 'training') && !this.isPaused && !this.episodeEnded) {
                 this.episodeEnded = true; // Set flag to prevent multiple calls
                 this.handleEpisodeEnd(result);
                 return; // Exit physics update completely to avoid multiple episode ends
@@ -1599,7 +1655,7 @@ class TwoWheelBotRL {
                 
                 // Check for episode termination based on step count (uses dynamic maxStepsPerEpisode)
                 const maxSteps = this.uiControls?.getParameter('maxStepsPerEpisode') || 1000;
-                if (this.trainingStep >= maxSteps && !this.episodeEnded && (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+                if (this.trainingStep >= maxSteps && !this.episodeEnded && (this.demoMode === 'training')) {
                     console.log(`Episode terminated at step ${this.trainingStep} (reached max steps)`);
                     this.episodeEnded = true;
                     // Create a synthetic "done" result to trigger episode end
@@ -1618,7 +1674,7 @@ class TwoWheelBotRL {
                 
                 if (bounds && (robotState.position < bounds.minX || robotState.position > bounds.maxX)) {
                     // Handle based on mode
-                    if ((this.demoMode === 'training' || this.demoMode === 'evaluation') && !this.episodeEnded) {
+                    if ((this.demoMode === 'training') && !this.episodeEnded) {
                         console.log(`Episode terminated at step ${this.trainingStep} (robot moved off canvas: position=${robotState.position.toFixed(2)}m, bounds=[${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}])`);
                         this.episodeEnded = true;
                         // Create a synthetic "done" result with penalty for going off canvas
@@ -1700,7 +1756,7 @@ class TwoWheelBotRL {
         document.getElementById('qvalue-estimate').textContent = `Q-Value: ${this.lastQValue.toFixed(3)}`;
         
         // Update debug display during manual control and evaluation
-        if (this.demoMode === 'manual' || this.demoMode === 'physics' || this.demoMode === 'evaluation') {
+        if (this.demoMode === 'freerun') {
             const robotState = this.robot ? this.robot.getState() : null;
             if (robotState) {
                 document.getElementById('debug-last-action').textContent = this.debugLastAction;
@@ -1965,7 +2021,8 @@ class TwoWheelBotRL {
             damping: 0.05,
             timestep: adjustedTimestep,
             maxAngle: uiControls.getParameter('maxAngle'),
-            motorTorqueRange: uiControls.getParameter('motorTorqueRange')
+            motorTorqueRange: uiControls.getParameter('motorTorqueRange'),
+            rewardType: 'complex' // Default to proportional reward
         });
         
         // Reset robot to initial state
@@ -1992,7 +2049,7 @@ class TwoWheelBotRL {
             maxStepsPerEpisode: 1000,
             hiddenSize: this.uiControls.getParameter('hiddenNeurons')
         } : {
-            learningRate: 0.001,  // Increased now that reward timing is fixed
+            learningRate: 0.0020,  // Optimized default for better convergence
             epsilon: 0.3,         // Moderate exploration
             epsilonDecay: 0.995,  // Slower epsilon decay for stability
             gamma: 0.95,          // Standard discount factor
@@ -2122,13 +2179,10 @@ class TwoWheelBotRL {
         const shouldUseParallel = this.shouldUseParallelTraining();
         
         if (shouldUseParallel) {
-            // Run both main thread episode (for visual) AND parallel batch (for speed)
-            this.isHybridTraining = true;
-            this.startNewEpisode(); // Start main thread episode for canvas updates
-            this.runParallelEpisodeBatch(); // Run workers in background (don't await)
+            // Pure parallel training - let workers handle everything for maximum speed
+                await this.runParallelEpisodeBatch();
         } else {
-            this.isHybridTraining = false;
-            this.startNewEpisode();
+                this.startNewEpisode();
         }
     }
     
@@ -2138,20 +2192,14 @@ class TwoWheelBotRL {
     shouldUseParallelTraining() {
         // Use parallel training if:
         // 1. Parallel training is available
-        // 2. Training speed is high enough to benefit from parallelization
-        // 3. We're not in the middle of a manual episode
+        // 2. Parallel mode is manually enabled via the Parallel button
         
         if (!this.parallelQLearning || !this.parallelQLearning.parallelManager.parallelEnabled) {
             return false;
         }
         
-        // Use parallel training for speeds >= 100x to get better performance
-        // (Reduced threshold for testing, but high enough to avoid conflicts)
-        if (this.trainingSpeed >= 100) {
-            return true;
-        }
-        
-        return false;
+        // Use parallel training only when explicitly enabled by user
+        return this.parallelModeEnabled;
     }
     
     /**
@@ -2164,8 +2212,8 @@ class TwoWheelBotRL {
             // Determine batch size based on worker configuration
             const batchSize = this.parallelQLearning.parallelManager.config.batchSize;
             
-            // In hybrid mode, reduce batch size to avoid overwhelming the main thread
-            const effectiveBatchSize = this.isHybridTraining ? Math.max(1, Math.floor(batchSize / 2)) : batchSize;
+            // Use full batch size for maximum parallel performance
+            const effectiveBatchSize = batchSize;
             
             // Performance tracking - start batch
             const batchStartTime = Date.now();
@@ -2195,18 +2243,16 @@ class TwoWheelBotRL {
                         bestEpisodeReward = episodeReward;
                     }
                     
-                    // In hybrid mode, don't update episode count (main thread handles it)
-                    if (!this.isHybridTraining) {
-                        this.episodeCount++;
-                    }
+                    // Update episode count for each completed episode
+                    this.episodeCount++;
                     
                     // Update best score if this episode was better
                     if (episodeReward > this.bestScore) {
                         this.bestScore = episodeReward;
                     }
                     
-                    // Update performance charts for EACH individual episode (only if not hybrid)
-                    if (this.performanceCharts && this.qlearning && !this.isHybridTraining) {
+                    // Update performance charts for EACH individual episode
+                    if (this.performanceCharts && this.qlearning) {
                         const balancedState = new Float32Array([0.0, 0.0]);
                         const qValues = this.qlearning.getAllQValues(balancedState);
                         const avgQValue = Array.from(qValues).reduce((a, b) => a + b, 0) / qValues.length;
@@ -2220,6 +2266,19 @@ class TwoWheelBotRL {
                         });
                     }
                     
+                    // Add worker experiences to replay buffer for training
+                    if (result.experiences && result.experiences.length > 0) {
+                        for (const experience of result.experiences) {
+                            this.qlearning.replayBuffer.addExperience(
+                                new Float32Array(experience.state),
+                                experience.action,
+                                experience.reward,
+                                new Float32Array(experience.nextState),
+                                experience.done
+                            );
+                        }
+                    }
+                    
                     console.log(`  Episode ${this.episodeCount}: reward=${episodeReward.toFixed(2)}, steps=${episodeSteps}, experiences=${result.experiences?.length || 0}`);
                     
                     // Small delay between individual episode updates to make charts visible
@@ -2229,16 +2288,21 @@ class TwoWheelBotRL {
             
             // Train the network on collected experiences
             let totalTrainingLoss = 0;
+            const totalExperiencesCollected = results.reduce((sum, result) => sum + (result?.experiences?.length || 0), 0);
+            
             if (this.qlearning.replayBuffer.size() >= this.qlearning.hyperparams.batchSize) {
-                // In hybrid mode, do fewer training steps to avoid interfering with main thread
-                const trainingSteps = this.isHybridTraining ? Math.max(1, Math.floor(effectiveBatchSize / 2)) : effectiveBatchSize;
+                // Scale training steps based on how much new data we collected
+                // More experiences = more training to utilize the data effectively
+                const baseTrainingSteps = effectiveBatchSize;
+                const experienceMultiplier = Math.max(1, Math.ceil(totalExperiencesCollected / 32)); // Scale up for lots of data
+                const trainingSteps = Math.min(baseTrainingSteps * experienceMultiplier, totalExperiencesCollected);
                 
                 for (let i = 0; i < trainingSteps; i++) {
                     const loss = this.qlearning._trainBatch();
                     totalTrainingLoss += loss || 0;
                     
-                    // Yield more frequently in hybrid mode to keep UI responsive
-                    const yieldFrequency = this.isHybridTraining ? 1 : 2;
+                    // Standard yield frequency for performance
+                    const yieldFrequency = 2;
                     if (i % yieldFrequency === 0) {
                         await new Promise(resolve => setTimeout(resolve, 0));
                     }
@@ -2306,22 +2370,19 @@ class TwoWheelBotRL {
             const avgSteps = totalSteps / results.length;
             
             console.log(`✅ Parallel batch completed: ${results.length} episodes, avg reward: ${avgReward.toFixed(2)}, best: ${bestEpisodeReward.toFixed(2)}, avg steps: ${avgSteps.toFixed(0)}`);
+            console.log(`📊 Training data: ${totalExperiencesCollected} experiences collected, ${trainingSteps || 0} training steps performed (${((trainingSteps || 0) / Math.max(1, totalExperiencesCollected) * 100).toFixed(1)}% utilization)`);
             
             // Yield control to UI and continue training after brief pause
             await new Promise(resolve => setTimeout(resolve, 50)); // Longer pause to allow UI updates
             
-            // In hybrid mode, don't start another batch (main thread handles progression)
-            // In pure parallel mode, continue with next batch
-            if (this.isTraining && !this.isHybridTraining) {
+            // Continue training if still in training mode
+            if (this.isTraining) {
                 this.startNextEpisodeOrBatch();
             }
             
         } catch (error) {
             console.warn('Parallel batch failed, falling back to single episode:', error);
-            // In hybrid mode, don't start new episode (main thread handles it)
-            if (!this.isHybridTraining) {
-                this.startNewEpisode();
-            }
+            this.startNewEpisode();
         }
     }
     
@@ -2430,12 +2491,6 @@ class TwoWheelBotRL {
                 return; // Exit early to prevent auto-pause at 10k episodes
             }
             
-            // Auto-pause training at 10,000 episodes to prevent runaway sessions (if not already completed)
-            if (this.episodeCount >= 10000) {
-                this.pauseTraining();
-                console.log(`🛑 Training auto-paused at ${this.episodeCount} episodes to prevent runaway session`);
-                alert(`Training automatically paused at ${this.episodeCount} episodes.\n\nThis prevents runaway training sessions. You can resume if needed.`);
-            }
             
             // Update performance charts with episode completion data
             if (this.performanceCharts && this.qlearning) {
@@ -2484,8 +2539,7 @@ class TwoWheelBotRL {
         if (this.demoMode === 'training' && newMode !== 'training') {
             this.isTraining = false;
             this.isPaused = false;
-            this.isHybridTraining = false;
-            document.getElementById('start-training').disabled = false;
+                document.getElementById('start-training').disabled = false;
             document.getElementById('pause-training').disabled = true;
             document.getElementById('pause-training').textContent = 'Pause Training';
         }
@@ -2567,6 +2621,139 @@ class TwoWheelBotRL {
     setDebugSpeed(speed) {
         this.debugSpeed = Math.max(0.1, Math.min(2.0, speed));
         console.log(`Debug speed set to ${speed}x`);
+    }
+    
+    setParallelMode(enabled) {
+        this.parallelModeEnabled = enabled;
+        console.log(`Parallel training mode ${enabled ? 'enabled' : 'disabled'}`);
+    }
+    
+    testModel() {
+        // Check if model is available
+        if (!this.qlearning) {
+            alert('No model available for testing!\n\nPlease train a model first or load a saved model.');
+            return;
+        }
+        
+        // Stop any current training
+        if (this.isTraining) {
+            this.pauseTraining();
+        }
+        
+        // Switch to free run mode
+        this.demoMode = 'freerun';
+        this.isTraining = false;
+        this.isPaused = false;
+        
+        // Disable PD controller to enable model control
+        this.pdControllerEnabled = false;
+        
+        // Update UI states
+        this.updateFreeRunSpeedUI();
+        this.updatePDControllerUI();
+        
+        // Reset robot to a clean state for testing
+        if (this.robot) {
+            this.robot.reset({
+                angle: (Math.random() - 0.5) * 0.1,
+                angularVelocity: 0,
+                position: 0,
+                velocity: 0
+            });
+        }
+        
+        console.log('Testing model in free run mode - Model Control active');
+    }
+    
+    updateFreeRunSpeedUI() {
+        const slider = document.getElementById('debug-speed');
+        const label = document.querySelector('label[for="debug-speed"]');
+        
+        if (slider && label) {
+            const isEnabled = this.demoMode === 'freerun';
+            slider.disabled = !isEnabled;
+            slider.style.opacity = isEnabled ? '1' : '0.5';
+            label.style.opacity = isEnabled ? '1' : '0.5';
+        }
+        
+        // Show/hide on-screen controls based on mode
+        this.updateOnScreenControlsVisibility();
+    }
+    
+    setupOnScreenControls() {
+        // Left control button
+        document.getElementById('control-left')?.addEventListener('mousedown', () => {
+            if (!this.userControlEnabled) return;
+            this.manualControl.leftPressed = true;
+            this.updateManualTorque();
+        });
+        document.getElementById('control-left')?.addEventListener('mouseup', () => {
+            if (!this.userControlEnabled) return;
+            this.manualControl.leftPressed = false;
+            this.updateManualTorque();
+        });
+        document.getElementById('control-left')?.addEventListener('mouseleave', () => {
+            if (!this.userControlEnabled) return;
+            this.manualControl.leftPressed = false;
+            this.updateManualTorque();
+        });
+        
+        // Right control button
+        document.getElementById('control-right')?.addEventListener('mousedown', () => {
+            if (!this.userControlEnabled) return;
+            this.manualControl.rightPressed = true;
+            this.updateManualTorque();
+        });
+        document.getElementById('control-right')?.addEventListener('mouseup', () => {
+            if (!this.userControlEnabled) return;
+            this.manualControl.rightPressed = false;
+            this.updateManualTorque();
+        });
+        document.getElementById('control-right')?.addEventListener('mouseleave', () => {
+            if (!this.userControlEnabled) return;
+            this.manualControl.rightPressed = false;
+            this.updateManualTorque();
+        });
+        
+        // Touch events for mobile
+        document.getElementById('control-left')?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!this.userControlEnabled) return;
+            this.manualControl.leftPressed = true;
+            this.updateManualTorque();
+        });
+        document.getElementById('control-left')?.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            if (!this.userControlEnabled) return;
+            this.manualControl.leftPressed = false;
+            this.updateManualTorque();
+        });
+        
+        document.getElementById('control-right')?.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (!this.userControlEnabled) return;
+            this.manualControl.rightPressed = true;
+            this.updateManualTorque();
+        });
+        document.getElementById('control-right')?.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            if (!this.userControlEnabled) return;
+            this.manualControl.rightPressed = false;
+            this.updateManualTorque();
+        });
+        
+        // Reset button
+        document.getElementById('control-reset')?.addEventListener('click', () => {
+            this.resetRobotPosition();
+        });
+    }
+    
+    updateOnScreenControlsVisibility() {
+        const controls = document.getElementById('on-screen-controls');
+        if (controls) {
+            const shouldShow = this.demoMode === 'freerun';
+            controls.style.display = shouldShow ? 'flex' : 'none';
+        }
     }
     
     updateNetworkArchitecture(architecture) {
@@ -2659,7 +2846,7 @@ class TwoWheelBotRL {
             // If currently training and current step count exceeds new limit, end episode
             if (this.isTraining && !this.isPaused && !this.episodeEnded && 
                 this.trainingStep >= maxStepsPerEpisode && 
-                (this.demoMode === 'training' || this.demoMode === 'evaluation')) {
+                (this.demoMode === 'training')) {
                 console.log(`Episode ending immediately - current step ${this.trainingStep} >= new limit ${maxStepsPerEpisode}`);
                 this.episodeEnded = true;
                 // Trigger episode end on next physics update
@@ -2772,6 +2959,13 @@ class TwoWheelBotRL {
             return;
         }
         
+        // If we're in free run mode and trying to disable PD (switch to model), check if model exists
+        if (this.demoMode === 'freerun' && this.pdControllerEnabled && !this.qlearning) {
+            // User is trying to switch to model control but no model is loaded
+            alert('No model loaded!\n\nTo use Model Control, you need to:\n• Train a model (Start Training)\n• Load a saved model (Model Management)\n• Import a pre-trained model\n\nPD Controller will remain active.');
+            return; // Don't toggle, keep PD controller enabled
+        }
+        
         this.pdControllerEnabled = !this.pdControllerEnabled;
         this.updatePDControllerUI();
         
@@ -2799,77 +2993,39 @@ class TwoWheelBotRL {
             this.pdControllerEnabled = false;
         } else {
             button.disabled = false;
-            text.textContent = this.pdControllerEnabled ? 'Disable PD Controller' : 'Enable PD Controller';
-            status.textContent = this.pdControllerEnabled ? '(Active)' : '(Disabled)';
-            status.style.color = this.pdControllerEnabled ? '#00ff88' : '#888';
+            if (this.demoMode === 'freerun') {
+                // In free run mode, show what control method is active
+                if (this.pdControllerEnabled) {
+                    text.textContent = 'Switch to Model Control';
+                    status.textContent = '(PD Controller Active)';
+                    status.style.color = '#00ff88';
+                } else {
+                    text.textContent = 'Switch to PD Controller';
+                    status.textContent = this.qlearning ? '(Model Control Active)' : '(No Control Active)';
+                    status.style.color = this.qlearning ? '#2196F3' : '#888';
+                }
+            } else {
+                text.textContent = this.pdControllerEnabled ? 'Disable PD Controller' : 'Enable PD Controller';
+                status.textContent = this.pdControllerEnabled ? '(Active)' : '(Disabled)';
+                status.style.color = this.pdControllerEnabled ? '#00ff88' : '#888';
+            }
             status.style.marginLeft = '0'; // Remove margin since using <br>
         }
     }
     
     /**
-     * Toggle user control (arrow keys) on/off
+     * Set reward function type from dropdown
      */
-    toggleUserControl() {
-        this.userControlEnabled = !this.userControlEnabled;
-        this.updateUserControlUI();
-        
-        // Clear any pressed keys when disabling
-        if (!this.userControlEnabled) {
-            this.manualControl.leftPressed = false;
-            this.manualControl.rightPressed = false;
-            this.manualControl.manualTorque = 0;
-        }
-        
-        console.log('User Control (arrows)', this.userControlEnabled ? 'enabled' : 'disabled');
-    }
-    
-    /**
-     * Toggle reward function type between simple and complex
-     */
-    toggleRewardType() {
+    setRewardFunction(rewardType) {
         if (!this.robot) {
             console.warn('Robot not initialized');
             return;
         }
         
-        const currentType = this.robot.getRewardType();
-        const newType = currentType === 'simple' ? 'complex' : 'simple';
-        this.robot.setRewardType(newType);
-        this.updateRewardTypeUI();
+        this.robot.setRewardType(rewardType);
+        console.log(`Reward function changed to: ${rewardType === 'simple' ? 'CartPole (Binary)' : 'Proportional (Angle-based)'}`);
     }
     
-    /**
-     * Update reward type toggle button UI
-     */
-    updateRewardTypeUI() {
-        const button = document.getElementById('toggle-reward-type');
-        if (!button || !this.robot) return;
-        
-        const currentType = this.robot.getRewardType();
-        const displayName = currentType === 'simple' ? 'CartPole (Simple)' : 'Proportional (Complex)';
-        const nextType = currentType === 'simple' ? 'complex' : 'simple';
-        const nextDisplayName = nextType === 'simple' ? 'CartPole' : 'Proportional';
-        
-        button.textContent = `${displayName} → Switch to ${nextDisplayName}`;
-        button.style.backgroundColor = currentType === 'simple' ? '#4CAF50' : '#2196F3';
-    }
-    
-    /**
-     * Update user control button UI
-     */
-    updateUserControlUI() {
-        const button = document.getElementById('toggle-user-control');
-        const text = document.getElementById('user-control-text');
-        const status = document.getElementById('user-control-status');
-        
-        if (!button || !text || !status) return;
-        
-        button.disabled = false;
-        text.textContent = this.userControlEnabled ? 'Disable User Control' : 'Enable User Control';
-        status.textContent = this.userControlEnabled ? '(Active - Use ← →)' : '(Disabled)';
-        status.style.color = this.userControlEnabled ? '#00ff88' : '#888';
-        status.style.marginLeft = '0'; // Remove margin since using <br>
-    }
     
     /**
      * Reset robot position for manual control

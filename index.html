@@ -279,6 +279,69 @@
             100% { transform: rotate(360deg); }
         }
 
+        /* On-screen controls for free run mode */
+        #on-screen-controls {
+            position: absolute;
+            bottom: 18%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            z-index: 100;
+            pointer-events: auto;
+        }
+
+        .on-screen-btn {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #00d4ff;
+            background-color: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .on-screen-btn:hover {
+            background-color: rgba(0, 212, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .on-screen-btn:active,
+        .on-screen-btn.active {
+            background-color: rgba(0, 212, 255, 0.4);
+            transform: scale(0.95);
+        }
+
+        .on-screen-btn.reset-btn {
+            width: 80px;
+            border-radius: 30px;
+            font-size: 14px;
+            background-color: #0099cc;
+            color: #ffffff;
+            border-color: #006699;
+        }
+
+        /* Touch device optimizations */
+        @media (hover: none) {
+            .on-screen-btn {
+                width: 70px;
+                height: 70px;
+                font-size: 28px;
+            }
+            
+            .on-screen-btn.reset-btn {
+                width: 90px;
+                font-size: 16px;
+            }
+        }
+
         /* Responsive design for charts panel */
         @media (max-width: 1400px) {
             #charts-panel {
@@ -565,49 +628,34 @@
         </div>
         
         <div id="main-container">
-            <canvas id="simulation-canvas"></canvas>
+            <div id="canvas-wrapper" style="position: relative; flex: 1; background-color: #1a1a1a;">
+                <canvas id="simulation-canvas"></canvas>
+                
+                <!-- On-screen controls for free run mode -->
+                <div id="on-screen-controls" style="display: none;">
+                    <button id="control-left" class="on-screen-btn">←</button>
+                    <button id="control-reset" class="on-screen-btn reset-btn">Reset</button>
+                    <button id="control-right" class="on-screen-btn">→</button>
+                </div>
+            </div>
             
             <div id="webgpu-status">
                 <span id="webgpu-text">Checking WebGPU...</span>
             </div>
             
             <div id="controls-panel">
+                <div class="slider-container" style="margin-bottom: 15px; padding: 15px; border-bottom: 1px solid #404040;">
+                    <label for="debug-speed" class="tooltip" data-tooltip="Control simulation speed during free run mode (0.1x = 10x slower, 2x = 2x faster)">
+                        Free Run Speed: <span id="debug-speed-value" class="slider-value">1.0x</span>
+                    </label>
+                    <input type="range" id="debug-speed" min="0.1" max="2.0" step="0.1" value="1.0">
+                </div>
+                
                 <div style="padding: 20px 15px; border-bottom: 1px solid #404040; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 5px;">
                     <button id="toggle-pd-controller" class="control-btn" style="min-width: 180px; white-space: nowrap;">
                         <span id="pd-controller-text">Disable PD Controller</span>
                         <br><span id="pd-controller-status" style="font-size: 0.8em; color: #00ff88;">(Active)</span>
                     </button>
-                    <button id="toggle-user-control" class="control-btn" style="min-width: 180px; white-space: nowrap;">
-                        <span id="user-control-text">Enable User Control</span>
-                        <br><span id="user-control-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
-                    </button>
-                    <button id="toggle-reward-type" class="control-btn" style="min-width: 180px; white-space: nowrap;">
-                        <span id="reward-type-text">Reward: Simple</span>
-                        <br><span id="reward-type-status" style="font-size: 0.8em; color: #00ff88;">(CartPole-style)</span>
-                    </button>
-                </div>
-                
-                <div class="control-section collapsed">
-                    <h3>Debug Controls</h3>
-                    <div class="control-section-content">
-                        <div class="parameter-group">
-                            <h4>Manual Control Speed</h4>
-                            <div class="slider-container">
-                                <label for="debug-speed" class="tooltip" data-tooltip="Control simulation speed during manual control (0.1x = 10x slower, 2x = 2x faster)">
-                                    Speed: <span id="debug-speed-value" class="slider-value">1.0x</span>
-                                </label>
-                                <input type="range" id="debug-speed" min="0.1" max="2.0" step="0.1" value="1.0">
-                            </div>
-                            
-                            <h4>Real-time Feedback</h4>
-                            <div id="debug-action-display" style="margin: 10px 0; padding: 8px; background-color: #333; border-radius: 4px; font-family: monospace;">
-                                <div>Last Action: <span id="debug-last-action">None</span></div>
-                                <div>Current Reward: <span id="debug-current-reward">0.000</span></div>
-                                <div>Robot Angle: <span id="debug-robot-angle">0.00°</span></div>
-                                <div>Robot AngVel: <span id="debug-angular-velocity">0.00 rad/s</span></div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
                 
                 <div class="control-section">
@@ -625,25 +673,67 @@
                             <label for="training-speed" class="tooltip" data-tooltip="Simulation speed multiplier (1x = real-time)">
                                 Training Speed: <span id="training-speed-value" class="slider-value">1.0x</span>
                             </label>
-                            <input type="range" id="training-speed" min="0.1" max="1000" step="0.1" value="1.0">
+                            <input type="range" id="training-speed" min="0.1" max="50" step="0.1" value="1.0">
                             <div style="margin-top: 8px; display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
                                 <button id="speed-1x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">1x</button>
                                 <button id="speed-2x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">2x</button>
                                 <button id="speed-10x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">10x</button>
+                                <button id="speed-20x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">20x</button>
                                 <button id="speed-50x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">50x</button>
-                                <button id="speed-100x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">100x</button>
-                                <button id="speed-200x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">200x</button>
-                                <button id="speed-1000x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">1000x</button>
+                                <button id="speed-parallel" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem; background-color: #4CAF50;">Parallel</button>
                             </div>
                             <div style="margin-top: 6px; font-size: 0.7rem; color: #888; text-align: center;">
-                                Training auto-pauses at 10,000 episodes
+                                Use Parallel button for multi-core training
                             </div>
                         </div>
+                        
+                        <div class="slider-container">
+                            <label for="reward-function" class="tooltip" data-tooltip="Choose reward function: CartPole gives +1 for balance, Proportional gives scaled rewards">
+                                Reward Function:
+                            </label>
+                            <select id="reward-function" style="width: 100%; padding: 4px; margin-top: 4px;">
+                                <option value="simple">CartPole (Binary: +1 or 0)</option>
+                                <option value="complex" selected>Proportional (Angle-based)</option>
+                            </select>
+                        </div>
+                        
                     </div>
                 </div>
                 
                 <div class="control-section collapsed">
-                    <h3>Network Configuration</h3>
+                    <h3>Model Management</h3>
+                    <div class="control-section-content">
+                        <div id="current-model-info" style="padding: 8px; margin-bottom: 10px; background-color: #333; border-radius: 4px; font-size: 0.85rem;">
+                            <div style="color: #00d4ff; margin-bottom: 4px;">Current Model:</div>
+                            <div id="current-model-name" style="color: #fff;">No model loaded</div>
+                            <div id="model-stats" style="color: #888; font-size: 0.75rem; margin-top: 4px;"></div>
+                        </div>
+                        
+                        <div style="display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap;">
+                            <button id="save-model" class="primary">Save Current Model</button>
+                            <button id="export-model">Export to C++</button>
+                            <button id="import-model">Import from C++</button>
+                            <button id="reset-parameters" class="danger">Reset Parameters</button>
+                        </div>
+                        
+                        <div id="saved-models-section" style="margin-top: 15px;">
+                            <div style="color: #00d4ff; margin-bottom: 8px; font-size: 0.9rem; border-bottom: 1px solid #404040; padding-bottom: 4px;">
+                                Saved Models
+                            </div>
+                            <div id="saved-models-list" style="max-height: 300px; overflow-y: auto;">
+                                <!-- Model list will be dynamically populated here -->
+                            </div>
+                            <div id="no-saved-models" style="color: #666; font-size: 0.8rem; padding: 10px; text-align: center;">
+                                No saved models found
+                            </div>
+                        </div>
+                        
+                        <input type="file" id="cpp-file-input" accept=".cpp,.h,.txt" style="display: none;">
+                    </div>
+                </div>
+                
+                <div class="control-section collapsed">
+                    <h3>Neural Network Config</h3>
                     <div class="control-section-content">
                     <div class="parameter-group">
                         <h4>Bot Model Presets</h4>
@@ -826,38 +916,6 @@
                 </div>
                 
                 <div class="control-section collapsed">
-                    <h3>Model Management</h3>
-                    <div class="control-section-content">
-                        <div id="current-model-info" style="padding: 8px; margin-bottom: 10px; background-color: #333; border-radius: 4px; font-size: 0.85rem;">
-                            <div style="color: #00d4ff; margin-bottom: 4px;">Current Model:</div>
-                            <div id="current-model-name" style="color: #fff;">No model loaded</div>
-                            <div id="model-stats" style="color: #888; font-size: 0.75rem; margin-top: 4px;"></div>
-                        </div>
-                        
-                        <div style="display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap;">
-                            <button id="save-model" class="primary">Save Current Model</button>
-                            <button id="export-model">Export to C++</button>
-                            <button id="import-model">Import from C++</button>
-                            <button id="reset-parameters" class="danger">Reset Parameters</button>
-                        </div>
-                        
-                        <div id="saved-models-section" style="margin-top: 15px;">
-                            <div style="color: #00d4ff; margin-bottom: 8px; font-size: 0.9rem; border-bottom: 1px solid #404040; padding-bottom: 4px;">
-                                Saved Models
-                            </div>
-                            <div id="saved-models-list" style="max-height: 300px; overflow-y: auto;">
-                                <!-- Model list will be dynamically populated here -->
-                            </div>
-                            <div id="no-saved-models" style="color: #666; font-size: 0.8rem; padding: 10px; text-align: center;">
-                                No saved models found
-                            </div>
-                        </div>
-                        
-                        <input type="file" id="cpp-file-input" accept=".cpp,.h,.txt" style="display: none;">
-                    </div>
-                </div>
-                
-                <div class="control-section collapsed">
                     <h3>Keyboard Shortcuts</h3>
                     <div class="control-section-content">
                         <div style="font-size: 0.8rem; line-height: 1.4;">
@@ -920,6 +978,21 @@
                         </div>
                         
                         <div id="backend-performance" style="font-size: 0.8rem; color: #00d4ff; margin-top: 8px;"></div>
+                    </div>
+                </div>
+                
+                <div class="control-section collapsed">
+                    <h3>Debug Controls</h3>
+                    <div class="control-section-content">
+                        <div class="parameter-group">
+                            <h4>Real-time Feedback</h4>
+                            <div id="debug-action-display" style="margin: 10px 0; padding: 8px; background-color: #333; border-radius: 4px; font-family: monospace;">
+                                <div>Last Action: <span id="debug-last-action">None</span></div>
+                                <div>Current Reward: <span id="debug-current-reward">0.000</span></div>
+                                <div>Robot Angle: <span id="debug-robot-angle">0.00°</span></div>
+                                <div>Robot AngVel: <span id="debug-angular-velocity">0.00 rad/s</span></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
