@@ -2,7 +2,7 @@
 
 **Live Demo**: [https://botsim.orenslab.com](https://botsim.orenslab.com)
 
-Train a neural network to balance a two-wheeled robot directly in your browser. This simulator uses Deep Q-Network (DQN) reinforcement learning with optional WebGPU acceleration for fast training. Export trained models as C++ code for real hardware deployment.
+Train a neural network to balance a two-wheeled robot directly in your browser. This simulator uses Deep Q-Network (DQN) reinforcement learning with optional WebGPU acceleration for fast training. Export trained models as C++ code for real hardware deployment on microcontrollers like the STM32WL55. Successfully tested on an [Adeept Self-Balancing Robot Kit](https://www.amazon.com/dp/B08817B5Q4) with firmware available at [github.com/Nero7991/two-wheel-bot-firmware](https://github.com/Nero7991/two-wheel-bot-firmware).
 
 ![Two-Wheel Bot Simulator](https://img.shields.io/badge/Status-Live-brightgreen) ![WebGPU](https://img.shields.io/badge/WebGPU-Accelerated-blue) ![License](https://img.shields.io/badge/License-MIT-green)
 
