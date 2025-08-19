@@ -159,6 +159,36 @@ int predict_action(float angle, float angular_velocity) {
 - Real-time: 50Hz control loop capability
 - Quantization: Int8 weights for minimal memory
 
+## Real Hardware Deployment
+
+### STM32 Implementation
+A successful real-world deployment has been tested using:
+
+**Hardware Setup:**
+- **Microcontroller**: STM32WL55 (Nucleo-WL55JC board)
+- **Robot Platform**: [Adeept Self-Balancing Robot Car Kit](https://www.amazon.com/dp/B08817B5Q4?ref=ppx_yo2ov_dt_b_fed_asin_title)
+- **Implementation**: I2C tap into original robot's motor driver and MPU6050 IMU
+- **Original MCU**: ATmega328P (replaced with STM32 for inference)
+
+**Firmware Repository:**
+The STM32 firmware that performs neural network inference on the microcontroller is available at:
+[https://github.com/Nero7991/two-wheel-bot-firmware](https://github.com/Nero7991/two-wheel-bot-firmware)
+
+**Performance Results:**
+- Successfully balances the two-wheeled robot using exported C++ models
+- Real-time inference at 50Hz control frequency
+- Robust performance with models trained in this web simulator
+- Demonstrates practical sim-to-real transfer for reinforcement learning
+
+**Integration Process:**
+1. Train model in web simulator
+2. Export to C++ using built-in exporter
+3. Integrate generated code into STM32 firmware
+4. Flash firmware to STM32WL55 board
+5. Connect to robot's I2C bus for sensor reading and motor control
+
+This deployment validates the effectiveness of the web-based training approach for real robotics applications.
+
 ## Development
 
 ### Project Structure
