@@ -280,8 +280,8 @@ export class BalancingRobot {
         this._updateAngleOffset(dt);
         
         // Add current state to history
-        const measuredAngle = this.rewardType === 'offset-adaptive' ? 
-            this.getMeasuredAngle() : this.state.angle;
+        // Always use measured angle (includes sensor offset) for realistic simulation
+        const measuredAngle = this.getMeasuredAngle();
         this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
     }
 
@@ -476,16 +476,11 @@ export class BalancingRobot {
         }
         
         // Single timestep behavior (backward compatibility)
-        if (this.rewardType === 'offset-adaptive') {
-            // Use measured angle (with offset) for neural network input
-            const measuredAngle = this.getMeasuredAngle();
-            const normalizedAngle = Math.max(-1, Math.min(1, measuredAngle / this.maxAngle));
-            const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.state.angularVelocity / 10));
-            return new Float32Array([normalizedAngle, normalizedAngularVelocity]);
-        } else {
-            // Use true angle for other reward functions
-            return this.state.getNormalizedInputs(this.maxAngle);
-        }
+        // Always use measured angle (with offset) for realistic sensor simulation
+        const measuredAngle = this.getMeasuredAngle();
+        const normalizedAngle = Math.max(-1, Math.min(1, measuredAngle / this.maxAngle));
+        const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.state.angularVelocity / 10));
+        return new Float32Array([normalizedAngle, normalizedAngularVelocity]);
     }
     
     /**

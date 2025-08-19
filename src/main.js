@@ -878,7 +878,7 @@ class TwoWheelBotRL {
         this.parallelModeEnabled = false; // Track if parallel training is manually enabled
         
         // Free run mode settings
-        this.resetAngleDegrees = 5.0; // Default reset angle in degrees
+        this.resetAngleDegrees = 0.0; // Default reset angle in degrees
         
         // Debug control speed
         this.debugSpeed = 1.0;
@@ -1431,12 +1431,11 @@ class TwoWheelBotRL {
         if (this.robot) {
             let resetAngle = 0; // Default: perfectly balanced
             
-            // In free run mode, use specific angle (randomly positive or negative)
-            if (this.demoMode === 'freerun' && this.resetAngleDegrees > 0) {
-                const angleDegrees = this.resetAngleDegrees || 5.0;
-                const angleRadians = angleDegrees * Math.PI / 180;
-                resetAngle = (Math.random() < 0.5 ? -1 : 1) * angleRadians; // Randomly +/- the specified angle
-                console.log(`Reset with angle: ${(resetAngle * 180 / Math.PI).toFixed(2)}° (set to ±${angleDegrees.toFixed(1)}°)`);
+            // In free run mode, use exact angle from slider
+            if (this.demoMode === 'freerun' && Math.abs(this.resetAngleDegrees) > 0) {
+                const angleDegrees = this.resetAngleDegrees || 0.0;
+                resetAngle = angleDegrees * Math.PI / 180; // Use exact angle from slider
+                console.log(`Reset with angle: ${(resetAngle * 180 / Math.PI).toFixed(2)}° (set to ${angleDegrees.toFixed(1)}°)`);
             }
             
             this.robot.reset({
@@ -2350,7 +2349,14 @@ class TwoWheelBotRL {
         const kp = 20; // Proportional gain
         const kd = 5;  // Derivative gain
         
-        const torque = (kp * state.angle + kd * state.angularVelocity);
+        // Use measured angle (includes sensor offset) instead of true angle
+        const measuredAngle = this.robot.getMeasuredAngle();
+        const torque = (kp * measuredAngle + kd * state.angularVelocity);
+        
+        // Debug offset effect (only log occasionally to avoid spam)
+        if (Math.abs(this.robot.angleOffset) > 0.01 && Math.random() < 0.01) {
+            console.log(`PD Controller: true=${(state.angle * 180 / Math.PI).toFixed(1)}°, measured=${(measuredAngle * 180 / Math.PI).toFixed(1)}°, offset=${(this.robot.angleOffset * 180 / Math.PI).toFixed(1)}°`);
+        }
         
         // Add some noise for more interesting behavior
         const noise = (Math.random() - 0.5) * 0.5;
@@ -2374,6 +2380,13 @@ class TwoWheelBotRL {
         
         // Get normalized state directly from robot (includes multi-timestep logic)
         const normalizedState = this.robot.getNormalizedInputs();
+        
+        // Debug offset effect on neural network (log occasionally to avoid spam)
+        if (Math.abs(this.robot.angleOffset) > 0.01 && Math.random() < 0.01) {
+            const trueAngle = this.robot.getState().angle;
+            const measuredAngle = this.robot.getMeasuredAngle();
+            console.log(`Neural Network Input: true=${(trueAngle * 180 / Math.PI).toFixed(1)}°, measured=${(measuredAngle * 180 / Math.PI).toFixed(1)}°, offset=${(this.robot.angleOffset * 180 / Math.PI).toFixed(1)}°, normalized=[${normalizedState[0].toFixed(3)}, ${normalizedState[1].toFixed(3)}]`);
+        }
         
         // Get Q-values for current state
         const qValues = this.qlearning.getAllQValues(normalizedState);
@@ -3388,12 +3401,11 @@ class TwoWheelBotRL {
         if (this.robot) {
             let resetAngle = 0; // Default: perfectly balanced
             
-            // In free run mode, use specific angle (randomly positive or negative) from slider
-            if (this.demoMode === 'freerun' && this.resetAngleDegrees > 0) {
-                const angleDegrees = this.resetAngleDegrees || 5.0;
-                const angleRadians = angleDegrees * Math.PI / 180;
-                resetAngle = (Math.random() < 0.5 ? -1 : 1) * angleRadians; // Randomly +/- the specified angle
-                console.log(`Reset with angle: ${(resetAngle * 180 / Math.PI).toFixed(2)}° (set to ±${angleDegrees.toFixed(1)}°)`);
+            // In free run mode, use exact angle from slider
+            if (this.demoMode === 'freerun' && Math.abs(this.resetAngleDegrees) > 0) {
+                const angleDegrees = this.resetAngleDegrees || 0.0;
+                resetAngle = angleDegrees * Math.PI / 180; // Use exact angle from slider
+                console.log(`Reset with angle: ${(resetAngle * 180 / Math.PI).toFixed(2)}° (set to ${angleDegrees.toFixed(1)}°)`);
             }
             
             this.robot.reset({
