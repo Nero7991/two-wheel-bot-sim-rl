@@ -103,6 +103,7 @@ export class BalancingRobot {
         this.angleOffset = this._validateParameter(config.angleOffset, 0.0, -Math.PI/6, Math.PI/6, 'angleOffset');
         this.offsetVariation = this._validateParameter(config.offsetVariation, 0.01, 0.0, 0.1, 'offsetVariation');
         this.offsetChangeRate = this._validateParameter(config.offsetChangeRate, 0.001, 0.0, 0.01, 'offsetChangeRate');
+        this.trainingOffsetRange = this._validateParameter(config.trainingOffsetRange, 0.0, 0.0, Math.PI/6, 'trainingOffsetRange');
         
         // Offset-adaptive reward learning parameters
         this.balancePointEstimate = 0.0; // Running estimate of the true balance point
@@ -171,11 +172,19 @@ export class BalancingRobot {
         this.stepCount = 0;
         this.totalReward = 0;
         
+        // Apply random offset for offset-adaptive training
+        if (this.rewardType === 'offset-adaptive' && this.trainingOffsetRange > 0) {
+            // Generate random offset within ±trainingOffsetRange
+            const randomOffsetRadians = (Math.random() - 0.5) * 2 * this.trainingOffsetRange;
+            this.angleOffset = randomOffsetRadians;
+            console.log(`Training: Applied random offset: ${(randomOffsetRadians * 180 / Math.PI).toFixed(2)}°`);
+        }
+        
         // Reset state history
         this.stateHistory.reset();
-        // Add initial state to history
-        const measuredAngle = this.rewardType === 'offset-adaptive' ? 
-            this.state.angle + this.angleOffset : this.state.angle;
+        // Add initial state to history  
+        // Always use measured angle (includes sensor offset) for realistic simulation
+        const measuredAngle = this.getMeasuredAngle();
         this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
     }
 
@@ -355,37 +364,27 @@ export class BalancingRobot {
             // Ensure reward doesn't go below a reasonable minimum
             return Math.max(totalReward, -1.0);
         } else if (this.rewardType === 'offset-adaptive') {
-            // OFFSET-ADAPTIVE REWARD: Learns to find the true balance point despite sensor offset
+            // OFFSET-ADAPTIVE REWARD: Simplified approach that rewards balancing regardless of sensor offset
             if (this.state.hasFailed(this.maxAngle)) {
                 return -10.0; // Penalty for falling
             }
             
-            // Get the measured angle (with offset)
-            const measuredAngle = this.getMeasuredAngle();
+            // Use TRUE angle (without offset) for reward calculation
+            // This allows the robot to learn to balance despite sensor offset
+            const trueAngleError = Math.abs(this.state.angle);
             
-            // Calculate error from estimated balance point
-            const balanceError = Math.abs(measuredAngle - this.balancePointEstimate);
+            // Base reward: proportional to how close to true upright the robot is
+            const uprightReward = 1.0 - (trueAngleError / this.maxAngle);
             
-            // Base reward: higher when measured angle is close to estimated balance point
-            const balanceReward = 1.0 - (balanceError / this.maxAngle);
-            
-            // Stability bonus: reward for low angular velocity (stable balancing)
+            // Stability bonus: reward for low angular velocity (smooth control)
             const angularVelMagnitude = Math.abs(this.state.angularVelocity);
-            const maxStableVel = 2.0; // rad/s - threshold for "stable"
-            const stabilityBonus = Math.max(0, 0.3 * (1.0 - angularVelMagnitude / maxStableVel));
+            const maxStableVel = 3.0; // rad/s - threshold for "stable"
+            const stabilityBonus = Math.max(0, 0.2 * (1.0 - angularVelMagnitude / maxStableVel));
             
-            // Discovery bonus: reward for maintaining balance in different measured angles
-            // This encourages exploration to find the true balance point
-            const discoveryBonus = this.balancePointConfidence < 0.8 ? 0.1 * balanceReward : 0.0;
+            // Small bonus for staying balanced for longer (encourages persistence)
+            const persistenceBonus = 0.1;
             
-            // Adaptation penalty: small penalty for changing balance point estimate too frequently
-            // This encourages stability in the estimate
-            const adaptationPenalty = 0.05 * Math.abs(this.adaptationRate);
-            
-            // Update balance point estimate based on performance
-            this._updateBalancePointEstimate(measuredAngle);
-            
-            const totalReward = balanceReward + stabilityBonus + discoveryBonus - adaptationPenalty;
+            const totalReward = uprightReward + stabilityBonus + persistenceBonus;
             
             return Math.max(totalReward, -1.0);
         } else {
@@ -420,6 +419,15 @@ export class BalancingRobot {
      */
     getMeasuredAngle() {
         return this.state.angle + this.angleOffset;
+    }
+    
+    /**
+     * Set training offset range for offset-adaptive learning
+     * @param {number} rangeDegrees - Maximum offset range in degrees (0-15)
+     */
+    setTrainingOffsetRange(rangeDegrees) {
+        this.trainingOffsetRange = Math.max(0, Math.min(15, rangeDegrees)) * Math.PI / 180; // Convert to radians and clamp
+        console.log(`Training offset range set to: ±${rangeDegrees.toFixed(1)}°`);
     }
     
     /**
@@ -587,20 +595,20 @@ export class BalancingRobot {
 
     /**
      * Set reward function type
-     * @param {string} type - 'simple' (CartPole-style) or 'complex' (angle-proportional)
+     * @param {string} type - 'simple' (CartPole-style), 'complex' (angle-proportional), 'efficient' (energy-aware), or 'offset-adaptive' (learns balance point)
      */
     setRewardType(type) {
-        if (type === 'simple' || type === 'complex' || type === 'efficient') {
+        if (type === 'simple' || type === 'complex' || type === 'efficient' || type === 'offset-adaptive') {
             this.rewardType = type;
             console.log(`Reward function changed to: ${type}`);
         } else {
-            console.warn(`Invalid reward type: ${type}. Use 'simple', 'complex', or 'efficient'`);
+            console.warn(`Invalid reward type: ${type}. Use 'simple', 'complex', 'efficient', or 'offset-adaptive'`);
         }
     }
     
     /**
      * Get current reward type
-     * @returns {string} Current reward type ('simple', 'complex', or 'efficient')
+     * @returns {string} Current reward type ('simple', 'complex', 'efficient', or 'offset-adaptive')
      */
     getRewardType() {
         return this.rewardType;

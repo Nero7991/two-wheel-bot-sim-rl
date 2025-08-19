@@ -609,6 +609,15 @@ class UIControls {
         this.saveParameters();
         this.updateAllDisplays();
         
+        // Update robot configuration for real-time parameter changes
+        if (this.app && this.app.robot) {
+            if (paramName === 'maxAngle') {
+                this.app.updateMaxAngle(value);
+            } else if (paramName === 'motorTorqueRange') {
+                this.app.updateMotorTorqueRange(value);
+            }
+        }
+        
         console.log(`Parameter ${paramName} set to ${value}`);
     }
     
@@ -879,6 +888,7 @@ class TwoWheelBotRL {
         
         // Free run mode settings
         this.resetAngleDegrees = 0.0; // Default reset angle in degrees
+        this.maxOffsetRangeDegrees = 5.0; // Default max offset range for training
         
         // Debug control speed
         this.debugSpeed = 1.0;
@@ -1265,6 +1275,12 @@ class TwoWheelBotRL {
         this.demoMode = 'training';
         this.updateFreeRunSpeedUI();
         
+        // Ensure robot has current offset range for training
+        if (this.robot && this.maxOffsetRangeDegrees > 0) {
+            this.robot.setTrainingOffsetRange(this.maxOffsetRangeDegrees);
+            console.log(`Training offset range set to: ±${this.maxOffsetRangeDegrees.toFixed(1)}°`);
+        }
+        
         // Track training start time for model naming
         this.trainingStartTime = new Date();
         const timestamp = this.trainingStartTime.toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -1364,6 +1380,7 @@ class TwoWheelBotRL {
         this.updateTrainingModelDisplay();
         this.updatePDControllerUI();
         this.updateUserControlOnlyUI();
+        this.updateOnScreenControlsVisibility();
         
         // Reset robot to clean state
         this.robot.reset();
@@ -2265,6 +2282,11 @@ class TwoWheelBotRL {
             rewardType: 'complex' // Default to proportional reward
         });
         
+        // Set training offset range if available
+        if (this.maxOffsetRangeDegrees > 0) {
+            this.robot.setTrainingOffsetRange(this.maxOffsetRangeDegrees);
+        }
+        
         // Reset robot to initial state
         this.robot.reset({
             angle: (Math.random() - 0.5) * 0.1, // Small random initial angle
@@ -2452,6 +2474,7 @@ class TwoWheelBotRL {
             // Reset training state to prevent getting stuck
             this.isTraining = false;
             this.isPaused = false;
+            this.demoMode = 'freerun';
             
             // Update UI to reflect stopped state
             const startButton = document.getElementById('start-training');
@@ -2465,6 +2488,7 @@ class TwoWheelBotRL {
             
             // Update training display
             this.updateTrainingModelDisplay();
+            this.updateOnScreenControlsVisibility();
             
             // Show error to user
             alert('Training stopped due to an error. Please check the console for details and try starting training again.');
@@ -2814,6 +2838,7 @@ class TwoWheelBotRL {
                     // Reset training state if error occurs
                     this.isTraining = false;
                     this.isPaused = false;
+                    this.demoMode = 'freerun';
                     
                     // Update UI
                     const startButton = document.getElementById('start-training');
@@ -2824,6 +2849,8 @@ class TwoWheelBotRL {
                         pauseButton.disabled = true;
                         pauseButton.textContent = 'Pause Training';
                     }
+                    
+                    this.updateOnScreenControlsVisibility();
                     
                     this.updateTrainingModelDisplay();
                     alert('Training stopped due to an error. Please check the console and try starting training again.');
@@ -2879,6 +2906,7 @@ class TwoWheelBotRL {
         this.updatePDControllerUI();
         this.updateUserControlUI();
         this.updateRewardTypeUI();
+        this.updateOnScreenControlsVisibility();
         
         // Initialize Q-learning if switching to training or evaluation mode
         if ((newMode === 'training' || newMode === 'evaluation') && !this.qlearning) {
@@ -3390,7 +3418,14 @@ class TwoWheelBotRL {
         }
         
         this.robot.setRewardType(rewardType);
-        console.log(`Reward function changed to: ${rewardType === 'simple' ? 'CartPole (Binary)' : 'Proportional (Angle-based)'}`);
+        
+        // Show/hide offset range slider based on reward type
+        const offsetRangeContainer = document.getElementById('offset-range-container');
+        if (offsetRangeContainer) {
+            offsetRangeContainer.style.display = rewardType === 'offset-adaptive' ? 'block' : 'none';
+        }
+        
+        console.log(`Reward function changed to: ${rewardType}`);
     }
     
     
@@ -4269,6 +4304,29 @@ function setupCustomSliders() {
         });
     } else {
         console.warn('Reset angle slider or value element not found');
+    }
+    
+    // Offset range slider for training
+    const offsetRangeSlider = document.getElementById('offset-range');
+    const offsetRangeValue = document.getElementById('offset-range-value');
+    
+    if (offsetRangeSlider && offsetRangeValue) {
+        console.log('Found offset range slider');
+        offsetRangeSlider.addEventListener('input', (e) => {
+            const degrees = parseFloat(e.target.value);
+            offsetRangeValue.textContent = `${degrees.toFixed(1)}°`;
+            
+            if (app) {
+                app.maxOffsetRangeDegrees = degrees;
+                // Also update robot's training offset range
+                if (app.robot) {
+                    app.robot.setTrainingOffsetRange(degrees);
+                }
+                console.log(`Max offset range set to: ±${degrees.toFixed(1)}° for training`);
+            }
+        });
+    } else {
+        console.warn('Offset range slider or value element not found');
     }
 }
 
