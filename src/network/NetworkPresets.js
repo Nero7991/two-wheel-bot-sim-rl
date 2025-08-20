@@ -185,6 +185,17 @@ export const NetworkPresets = {
         deployment: 'web'
     }),
     
+    // DQN* - Enhanced DQN with additional layer
+    DQN_STAR: new NetworkArchitecture({
+        name: 'DQN*',
+        description: 'Enhanced DQN with deeper architecture (128-32-3)',
+        layers: [128, 32],
+        maxParameters: 5000,
+        memoryConstraint: 4096,
+        targetFrequency: 100,
+        deployment: 'web'
+    }),
+    
     // Custom starting point
     CUSTOM: new NetworkArchitecture({
         name: 'Custom',

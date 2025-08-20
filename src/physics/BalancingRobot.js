@@ -124,6 +124,9 @@ export class BalancingRobot {
         this.state = new RobotState();
         this.currentMotorTorque = 0;
         this.previousMotorTorque = 0; // Track previous torque for energy efficiency calculation
+        this.previousAction = 0; // Track previous action for offset-adaptive mode (normalized -1 to 1)
+        this.previousTransformedAngularVel = 0; // Track previous transformed angular velocity for derivative
+        this.angularVelDerivative = 0; // Derivative of transformed angular velocity
         
         // State history for multi-timestep inputs
         this.historyTimesteps = this._validateParameter(config.historyTimesteps, 1, 1, 8, 'historyTimesteps');
@@ -169,6 +172,9 @@ export class BalancingRobot {
         );
         this.currentMotorTorque = 0;
         this.previousMotorTorque = 0;
+        this.previousAction = 0; // Reset previous action
+        this.previousTransformedAngularVel = 0; // Reset previous transformed angular velocity
+        this.angularVelDerivative = 0; // Reset derivative
         this.stepCount = 0;
         this.totalReward = 0;
         
@@ -183,9 +189,14 @@ export class BalancingRobot {
         // Reset state history
         this.stateHistory.reset();
         // Add initial state to history  
-        // Always use measured angle (includes sensor offset) for realistic simulation
-        const measuredAngle = this.getMeasuredAngle();
-        this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
+        if (this.rewardType === 'offset-adaptive') {
+            // For offset-adaptive mode, use previous action (initially 0)
+            this.stateHistory.addState(this.previousAction, this.state.angularVelocity, this.angularVelDerivative);
+        } else {
+            // Always use measured angle (includes sensor offset) for realistic simulation
+            const measuredAngle = this.getMeasuredAngle();
+            this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
+        }
     }
 
     /**
@@ -205,6 +216,9 @@ export class BalancingRobot {
 
         // Store previous torque for energy efficiency calculation
         this.previousMotorTorque = this.currentMotorTorque;
+        
+        // Store previous action for offset-adaptive mode (normalized input action)
+        this.previousAction = motorTorque; // motorTorque is already normalized -1 to 1
         
         // Scale motor torque by the configurable range, then clamp to motor strength
         const scaledTorque = motorTorque * this.motorTorqueRange;
@@ -288,10 +302,24 @@ export class BalancingRobot {
         // Update angle offset simulation (for offset-adaptive reward)
         this._updateAngleOffset(dt);
         
+        // Calculate derivative of transformed angular velocity for offset-adaptive mode
+        if (this.rewardType === 'offset-adaptive') {
+            const currentTransformedAngularVel = this._transformAngularVelocity(this.state.angularVelocity);
+            this.angularVelDerivative = (currentTransformedAngularVel - this.previousTransformedAngularVel) / dt;
+            this.previousTransformedAngularVel = currentTransformedAngularVel;
+        }
+        
         // Add current state to history
-        // Always use measured angle (includes sensor offset) for realistic simulation
-        const measuredAngle = this.getMeasuredAngle();
-        this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
+        if (this.rewardType === 'offset-adaptive') {
+            // For offset-adaptive mode, use previous action instead of angle
+            // Store raw angular velocity - StateHistory will handle normalization
+            this.stateHistory.addState(this.previousAction, this.state.angularVelocity, this.angularVelDerivative);
+        } else {
+            // Always use measured angle (includes sensor offset) for realistic simulation
+            const measuredAngle = this.getMeasuredAngle();
+            // Store raw angular velocity - StateHistory will handle normalization  
+            this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
+        }
     }
 
     /**
@@ -364,29 +392,26 @@ export class BalancingRobot {
             // Ensure reward doesn't go below a reasonable minimum
             return Math.max(totalReward, -1.0);
         } else if (this.rewardType === 'offset-adaptive') {
-            // OFFSET-ADAPTIVE REWARD: Simplified approach that rewards balancing regardless of sensor offset
+            // OFFSET-ADAPTIVE REWARD: Angular velocity stability + derivative reward
             if (this.state.hasFailed(this.maxAngle)) {
                 return -10.0; // Penalty for falling
             }
             
-            // Use TRUE angle (without offset) for reward calculation
-            // This allows the robot to learn to balance despite sensor offset
-            const trueAngleError = Math.abs(this.state.angle);
-            
-            // Base reward: proportional to how close to true upright the robot is
-            const uprightReward = 1.0 - (trueAngleError / this.maxAngle);
-            
-            // Stability bonus: reward for low angular velocity (smooth control)
+            // PRIMARY REWARD: Angular velocity stability (completely offset-independent)
             const angularVelMagnitude = Math.abs(this.state.angularVelocity);
-            const maxStableVel = 3.0; // rad/s - threshold for "stable"
-            const stabilityBonus = Math.max(0, 0.2 * (1.0 - angularVelMagnitude / maxStableVel));
+            const maxStableVel = 2.0; // rad/s - threshold for "stable"
+            const velocityReward = Math.max(0, 1.0 - (angularVelMagnitude / maxStableVel));
             
-            // Small bonus for staying balanced for longer (encourages persistence)
+            // DERIVATIVE REWARD: Reward for decreasing angular velocity magnitude
+            // Negative derivative means velocity magnitude is decreasing (good)
+            // Positive derivative means velocity magnitude is increasing (bad)
+            const derivativeReward = -this.angularVelDerivative * 0.2; // Scale and invert
+            const clampedDerivativeReward = Math.max(-0.5, Math.min(0.5, derivativeReward)); // Clamp impact
+            
+            // Small persistence bonus for staying upright longer
             const persistenceBonus = 0.1;
             
-            const totalReward = uprightReward + stabilityBonus + persistenceBonus;
-            
-            return Math.max(totalReward, -1.0);
+            return velocityReward + clampedDerivativeReward + persistenceBonus;
         } else {
             // DEFAULT: Fall back to simple reward
             console.warn(`Unknown reward type: ${this.rewardType}, falling back to simple reward`);
@@ -474,21 +499,66 @@ export class BalancingRobot {
     }
 
     /**
+     * Apply non-linear transformation to angular velocity for better sensitivity
+     * Maps small velocities to larger range for better discrimination
+     * @param {number} angularVel - Raw angular velocity in rad/s
+     * @returns {number} Transformed value in [-1, 1] range
+     */
+    _transformAngularVelocity(angularVel) {
+        // Get absolute value and sign
+        const sign = Math.sign(angularVel);
+        const absVel = Math.abs(angularVel);
+        
+        // Define transformation parameters
+        const lowRange = 3.0;  // Values 0-3 rad/s map to 0-0.7
+        const highRange = 10.0; // Values 3-10 rad/s map to 0.7-1.0
+        
+        let transformed;
+        if (absVel <= lowRange) {
+            // Use square root for expansion of low values (0-3 → 0-0.7)
+            // sqrt gives more sensitivity to small changes
+            transformed = 0.7 * Math.sqrt(absVel / lowRange);
+        } else if (absVel <= highRange) {
+            // Linear mapping for medium values (3-10 → 0.7-1.0)
+            const normalized = (absVel - lowRange) / (highRange - lowRange);
+            transformed = 0.7 + 0.3 * normalized;
+        } else {
+            // Clip high values to 1.0
+            transformed = 1.0;
+        }
+        
+        // Apply sign and ensure bounds
+        return Math.max(-1, Math.min(1, sign * transformed));
+    }
+    
+    /**
      * Get normalized inputs for neural network
      * @returns {Float32Array} Normalized state inputs
      */
     getNormalizedInputs() {
         // Use state history for multi-timestep inputs
         if (this.historyTimesteps > 1) {
-            return this.stateHistory.getNormalizedInputs(this.maxAngle);
+            if (this.rewardType === 'offset-adaptive') {
+                // For offset-adaptive mode, use special method that includes derivative
+                return this.stateHistory.getNormalizedInputsOffsetAdaptive();
+            } else {
+                return this.stateHistory.getNormalizedInputs(this.maxAngle);
+            }
         }
         
         // Single timestep behavior (backward compatibility)
-        // Always use measured angle (with offset) for realistic sensor simulation
-        const measuredAngle = this.getMeasuredAngle();
-        const normalizedAngle = Math.max(-1, Math.min(1, measuredAngle / this.maxAngle));
-        const normalizedAngularVelocity = Math.max(-1, Math.min(1, this.state.angularVelocity / 10));
-        return new Float32Array([normalizedAngle, normalizedAngularVelocity]);
+        if (this.rewardType === 'offset-adaptive') {
+            // OFFSET-ADAPTIVE MODE: Use previous action instead of angle
+            const normalizedPreviousAction = Math.max(-1, Math.min(1, this.previousAction)); // Already normalized
+            const transformedAngularVelocity = this._transformAngularVelocity(this.state.angularVelocity);
+            return new Float32Array([normalizedPreviousAction, transformedAngularVelocity]);
+        } else {
+            // NORMAL MODE: Use measured angle (with offset) for realistic sensor simulation
+            const measuredAngle = this.getMeasuredAngle();
+            const normalizedAngle = Math.max(-1, Math.min(1, measuredAngle / this.maxAngle));
+            const transformedAngularVelocity = this._transformAngularVelocity(this.state.angularVelocity);
+            return new Float32Array([normalizedAngle, transformedAngularVelocity]);
+        }
     }
     
     /**
