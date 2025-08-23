@@ -29,12 +29,37 @@
             background-color: #2d2d2d;
             padding: 10px 20px;
             border-bottom: 1px solid #404040;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         #header h1 {
             font-size: 1.5rem;
             color: #00d4ff;
             max-height: 2vh;
+        }
+
+        .help-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .help-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
         }
 
         #main-container {
@@ -744,6 +769,7 @@
     <div id="app">
         <div id="header">
             <h1>Two-Wheel Balancing Robot RL Environment</h1>
+            <button class="help-btn" onclick="showWelcomeDialog()" title="Show Help">?</button>
         </div>
         
         <div id="main-container">
@@ -1218,7 +1244,7 @@
             </div>
             <div class="step">
                 <strong>Import Model</strong>
-                Use <span class="highlight">"Load Model"</span> in Model Management to import a pre-trained model
+                Use <span class="highlight">"Load Model"</span> in Model Management to import a pre-trained model. The <span class="highlight">GitHub repository</span> includes three pretrained models: Bad, Good, and Great for testing different performance levels.
             </div>
             
             <h3>Default Settings</h3>
