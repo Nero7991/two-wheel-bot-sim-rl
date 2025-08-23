@@ -338,25 +338,30 @@
 
         .welcome-dialog .step {
             background-color: #f5f5f7;
-            padding: 16px;
-            margin: 12px 0;
+            padding: 20px;
+            margin: 16px 0;
             border-radius: 12px;
             font-size: 15px;
             color: #1d1d1f;
+            line-height: 1.5;
         }
 
         .welcome-dialog .step strong {
             color: #1d1d1f;
             font-weight: 600;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
         }
 
         .welcome-dialog .tip {
             background: linear-gradient(135deg, #f5f5f7, #e8e8ed);
-            padding: 16px;
+            padding: 20px;
             border-radius: 12px;
             margin: 20px 0;
-            font-size: 14px;
+            font-size: 15px;
             color: #424245;
+            line-height: 1.5;
         }
 
         .welcome-dialog .tip strong {
@@ -1178,24 +1183,28 @@
         <div class="welcome-dialog">
             <h2>Two-Wheel Balancing Robot</h2>
             
-            <p>Welcome to an interactive machine learning training simulator. This <span class="highlight">weekend project</span> built with <strong>Claude Code</strong> demonstrates reinforcement learning in action.</p>
+            <p>Welcome to an interactive machine learning training simulator that demonstrates reinforcement learning in action.</p>
             
             <p>Watch a neural network learn to balance a two-wheeled robot from scratch, similar to a self-balancing hoverboard or Segway.</p>
             
             <h3>Manual Control</h3>
             <div class="step">
-                <strong>Take Control:</strong> Click <span class="highlight">"Enable User Control Only"</span> to disable the controller, then use <span class="highlight">arrow keys</span> or <span class="highlight">on-screen buttons</span> to manually balance the robot. Experience how challenging it is!
+                <strong>Take Control</strong>
+                Click <span class="highlight">"Enable User Control Only"</span> to disable the controller, then use <span class="highlight">arrow keys</span> or <span class="highlight">on-screen buttons</span> to manually balance the robot. Experience how challenging it is!
             </div>
             
             <h3>Train a Model</h3>
             <div class="step">
-                <strong>Step 1:</strong> Click <span class="highlight">"Start Training"</span> to begin machine learning
+                <strong>Step 1</strong>
+                Click <span class="highlight">"Start Training"</span> to begin machine learning
             </div>
             <div class="step">
-                <strong>Step 2:</strong> The model will fail repeatedly at first — this is normal
+                <strong>Step 2</strong>
+                The model will fail repeatedly at first — this is normal
             </div>
             <div class="step">
-                <strong>Step 3:</strong> After 50-100 episodes, you'll see improvement in the reward chart
+                <strong>Step 3</strong>
+                After 50-100 episodes, you'll see improvement in the reward chart
             </div>
             
             <div class="tip">
@@ -1204,10 +1213,12 @@
             
             <h3>Test or Import Models</h3>
             <div class="step">
-                <strong>Test Trained Model:</strong> After training, click <span class="highlight">"Test Model"</span> to see your model in action
+                <strong>Test Trained Model</strong>
+                After training, click <span class="highlight">"Test Model"</span> to see your model in action
             </div>
             <div class="step">
-                <strong>Import Model:</strong> Use <span class="highlight">"Load Model"</span> in Model Management to import a pre-trained model
+                <strong>Import Model</strong>
+                Use <span class="highlight">"Load Model"</span> in Model Management to import a pre-trained model
             </div>
             
             <h3>Default Settings</h3>
@@ -1218,9 +1229,6 @@
             <p>• <strong>Episodes 50-200:</strong> Gradual improvement — brief moments of balance</p>
             <p>• <strong>Episodes 200+:</strong> Stable balancing — the model has learned</p>
             
-            <p style="text-align: center; margin-top: 32px; color: #86868b; font-size: 13px;">
-                Built with Claude Code in a weekend
-            </p>
             
             <button class="welcome-close-btn" onclick="closeWelcomeDialog()">Get Started</button>
         </div>
