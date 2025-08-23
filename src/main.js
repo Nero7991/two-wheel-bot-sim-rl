@@ -921,6 +921,10 @@ class TwoWheelBotRL {
         // User control only mode
         this.userControlOnlyEnabled = false; // When true, disables all assistance
         
+        // Auto-reset toggle for free run mode
+        this.autoResetEnabled = false; // Auto reset when robot goes off screen in free run mode (disabled by default)
+        this.autoResetScheduled = false; // Flag to prevent multiple auto-reset timeouts
+        
         // User control toggle state (separate from manual mode)
         this.userControlEnabled = true; // Always enabled in free run mode
         
@@ -991,6 +995,7 @@ class TwoWheelBotRL {
             // Initialize UI state
             this.updatePDControllerUI();
             this.updateUserControlOnlyUI();
+            this.updateAutoResetUI();
             this.updateFreeRunSpeedUI();
             this.updateModelDisplay('No model loaded', null);
             
@@ -1198,6 +1203,11 @@ class TwoWheelBotRL {
             this.toggleUserControlOnly();
         });
         
+        // Auto Reset toggle
+        document.getElementById('toggle-auto-reset')?.addEventListener('click', () => {
+            this.toggleAutoReset();
+        });
+        
         // Reward Function dropdown
         document.getElementById('reward-function')?.addEventListener('change', (e) => {
             this.setRewardFunction(e.target.value);
@@ -1384,6 +1394,7 @@ class TwoWheelBotRL {
         this.updateTrainingModelDisplay();
         this.updatePDControllerUI();
         this.updateUserControlOnlyUI();
+        this.updateAutoResetUI();
         this.updateOnScreenControlsVisibility();
         
         // Reset robot to clean state
@@ -1419,6 +1430,8 @@ class TwoWheelBotRL {
         this.demoMode = 'freerun'; // Reset to free run mode
         this.pdControllerEnabled = true; // Reset to PD controller enabled
         this.userControlOnlyEnabled = false; // Reset User Control Only
+        this.autoResetEnabled = false; // Reset auto-reset to disabled
+        this.autoResetScheduled = false; // Clear any pending auto-reset
         
         // Reset all training counters and metrics
         this.trainingStep = 0;
@@ -1488,6 +1501,7 @@ class TwoWheelBotRL {
         this.updateFreeRunSpeedUI();
         this.updatePDControllerUI();
         this.updateUserControlOnlyUI();
+        this.updateAutoResetUI();
         this.updateOnScreenControlsVisibility();
         this.updateUI();
         
@@ -1886,34 +1900,65 @@ class TwoWheelBotRL {
                     this.handleEpisodeEnd(syntheticResult);
                     break; // Exit the physics loop immediately
                 }
-                
-                // Check for robot moving off canvas in all modes
-                const robotState = this.robot.getState();
-                const bounds = this.renderer ? this.renderer.getPhysicsBounds() : null;
-                
-                if (bounds && (robotState.position < bounds.minX || robotState.position > bounds.maxX)) {
-                    // Handle based on mode
-                    if ((this.demoMode === 'training') && !this.episodeEnded) {
+            }
+            
+            // Check for robot moving off canvas OR falling over in all modes (moved outside training-only block)
+            const robotState = this.robot.getState();
+            const bounds = this.renderer ? this.renderer.getPhysicsBounds() : null;
+            
+            // Check for off-screen horizontally OR robot has fallen (done = true)
+            const isOffScreen = bounds && (robotState.position < bounds.minX || robotState.position > bounds.maxX);
+            const hasFallen = result.done; // Robot fell over (angle too large)
+            
+            if (isOffScreen || hasFallen) {
+                // Handle based on mode
+                if ((this.demoMode === 'training') && !this.episodeEnded && this.isTraining) {
+                    if (isOffScreen) {
                         console.log(`Episode terminated at step ${this.trainingStep} (robot moved off canvas: position=${robotState.position.toFixed(2)}m, bounds=[${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}])`);
-                        this.episodeEnded = true;
-                        // Create a synthetic "done" result with penalty for going off canvas
-                        const syntheticResult = {
-                            state: this.robot.getState(),
-                            reward: -1.0, // Penalty for moving off canvas
-                            done: true
-                        };
-                        this.handleEpisodeEnd(syntheticResult);
-                        break; // Exit the physics loop immediately
-                    } else if (this.demoMode === 'manual' || this.demoMode === 'physics') {
-                        // Reset robot to origin for manual/physics modes
-                        console.log(`Robot moved off canvas in ${this.demoMode} mode, resetting to origin`);
-                        this.robot.reset({
-                            angle: 0,
-                            angularVelocity: 0,
-                            position: 0,
-                            velocity: 0
-                        });
+                    } else if (hasFallen) {
+                        console.log(`Episode terminated at step ${this.trainingStep} (robot fell over: angle=${robotState.angle.toFixed(2)} rad)`);
                     }
+                    this.episodeEnded = true;
+                    // Create a synthetic "done" result with penalty
+                    const syntheticResult = {
+                        state: this.robot.getState(),
+                        reward: -1.0, // Penalty for failure
+                        done: true
+                    };
+                    this.handleEpisodeEnd(syntheticResult);
+                    break; // Exit the physics loop immediately
+                } else if (this.demoMode === 'freerun' && this.autoResetEnabled) {
+                    // Auto-reset robot in free run mode if enabled (with 1-second delay)
+                    if (!this.autoResetScheduled) {
+                        this.autoResetScheduled = true;
+                        if (isOffScreen) {
+                            console.log(`Robot moved off canvas in free run mode, auto-resetting in 1 second...`);
+                        } else if (hasFallen) {
+                            console.log(`Robot fell over in free run mode (angle=${robotState.angle.toFixed(2)} rad), auto-resetting in 1 second...`);
+                        }
+                        
+                        // Schedule reset after 1 second delay
+                        setTimeout(() => {
+                            if (this.demoMode === 'freerun' && this.autoResetEnabled) {
+                                console.log('Auto-resetting now...');
+                                this.resetRobotPosition(); // Use the existing reset function which handles reset angle
+                                this.autoResetScheduled = false;
+                            }
+                        }, 1000);
+                    }
+                } else if (this.demoMode === 'manual' || this.demoMode === 'physics') {
+                    // Reset robot to origin for manual/physics modes
+                    if (isOffScreen) {
+                        console.log(`Robot moved off canvas in ${this.demoMode} mode, resetting to origin`);
+                    } else if (hasFallen) {
+                        console.log(`Robot fell over in ${this.demoMode} mode, resetting to origin`);
+                    }
+                    this.robot.reset({
+                        angle: 0,
+                        angularVelocity: 0,
+                        position: 0,
+                        velocity: 0
+                    });
                 }
             }
         }
@@ -3009,6 +3054,7 @@ class TwoWheelBotRL {
         this.updateFreeRunSpeedUI();
         this.updatePDControllerUI();
         this.updateUserControlOnlyUI();
+        this.updateAutoResetUI();
         
         // Reset robot to a clean state for testing
         if (this.robot) {
@@ -3422,6 +3468,33 @@ class TwoWheelBotRL {
     }
     
     /**
+     * Toggle auto-reset functionality in free run mode
+     */
+    toggleAutoReset() {
+        this.autoResetEnabled = !this.autoResetEnabled;
+        this.updateAutoResetUI();
+        
+        console.log('Auto Reset', this.autoResetEnabled ? 'enabled' : 'disabled');
+    }
+    
+    /**
+     * Update auto-reset button UI
+     */
+    updateAutoResetUI() {
+        const button = document.getElementById('toggle-auto-reset');
+        const text = document.getElementById('auto-reset-text');
+        const status = document.getElementById('auto-reset-status');
+        
+        if (!button || !text || !status) return;
+        
+        button.disabled = false;
+        text.textContent = this.autoResetEnabled ? 'Disable Auto Reset' : 'Enable Auto Reset';
+        status.textContent = this.autoResetEnabled ? '(Enabled)' : '(Disabled)';
+        status.style.color = this.autoResetEnabled ? '#00ff88' : '#888';
+        status.style.marginLeft = '0'; // Remove margin since using <br>
+    }
+    
+    /**
      * Set reward function type from dropdown
      */
     setRewardFunction(rewardType) {
@@ -3447,6 +3520,9 @@ class TwoWheelBotRL {
      */
     resetRobotPosition() {
         if (this.robot) {
+            // Clear any pending auto-reset timeout
+            this.autoResetScheduled = false;
+            
             let resetAngle = 0; // Default: perfectly balanced
             
             // In free run mode, use exact angle from slider

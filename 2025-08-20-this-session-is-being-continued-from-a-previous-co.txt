@@ -1,0 +1,16 @@
+╭─────────────────────────────────────────────────────╮
+│ ✻ Welcome to Claude Code!                           │
+│                                                     │
+│   /help for help, /status for your current setup    │
+│                                                     │
+│   cwd: /home/orencollaco/GitHub/twowheelbot-rl-web  │
+╰─────────────────────────────────────────────────────╯
+● Compact summary (ctrl+r to expand)
+  ⎿  Read src/physics/StateHistory.js (228 lines)
+  ⎿  Read src/physics/BalancingRobot.js (739 lines)
+  ⎿  Read src/network/NetworkPresets.js (340 lines)
+  ⎿  Todo list read (14 items)
+
+> /compact 
+  ⎿  Compacted. ctrl+r to see full summary
+

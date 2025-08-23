@@ -1,0 +1,21 @@
+[Unit]
+Description=Two-Wheel Balancing Robot RL Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=orencollaco
+WorkingDirectory=/home/orencollaco/GitHub/twowheelbot-rl-web
+ExecStart=/home/orencollaco/GitHub/twowheelbot-rl-web/start-production.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/twowheelbot.log
+StandardError=append:/var/log/twowheelbot.error.log
+Environment=NODE_ENV=production
+
+# Restart on failure with exponential backoff
+StartLimitInterval=200
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
