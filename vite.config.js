@@ -3,10 +3,14 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   // Server configuration for development
   server: {
-    port: 3005,
+    port: 3006,
     host: '0.0.0.0', // Bind to all interfaces for external access
     cors: true,
     allowedHosts: ['apps.orenslab.com', 'botsim.orenslab.com'],
+    watch: {
+      usePolling: true,
+      interval: 1000,
+    },
     headers: {
       // Required headers for WebGPU and SharedArrayBuffer
       'Cross-Origin-Embedder-Policy': 'require-corp',

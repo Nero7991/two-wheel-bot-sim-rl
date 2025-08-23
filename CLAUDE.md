@@ -127,7 +127,7 @@ project/
 - Memory usage under 384KB on embedded systems
 - Real-time visualization at 60 FPS
 
-Use Port 3005 for this app. If something exists, you are free to kill it. 3005 is reserved for this.
+Use Port 3006 for development (npm run dev). Production service runs on 3005.
 
 ## Testing Requirements
 
