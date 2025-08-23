@@ -182,10 +182,17 @@ export class BalancingRobot {
         
         // Reset state history
         this.stateHistory.reset();
-        // Add initial state to history  
-        // Always use measured angle (includes sensor offset) for realistic simulation
+        
+        // Pre-fill history buffer with initial state for multi-timestep models
+        // This ensures the model gets proper inputs immediately after reset
         const measuredAngle = this.getMeasuredAngle();
-        this.stateHistory.addState(measuredAngle, this.state.angularVelocity);
+        const initialAngularVelocity = this.state.angularVelocity;
+        
+        // Fill the entire history buffer with the initial state
+        // This is important for multi-timestep models to work correctly in free run
+        for (let i = 0; i < this.stateHistory.maxTimesteps; i++) {
+            this.stateHistory.addState(measuredAngle, initialAngularVelocity);
+        }
     }
 
     /**

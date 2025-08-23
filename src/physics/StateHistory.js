@@ -12,8 +12,7 @@ export class StateHistory {
         this.history = [];
         this.currentTimesteps = 1; // Start with single timestep
         
-        // Initialize with zeros
-        this.reset();
+        // Initialize with empty buffer - will be filled by robot on first reset
     }
     
     /**
@@ -23,9 +22,24 @@ export class StateHistory {
     setTimesteps(timesteps) {
         this.currentTimesteps = Math.max(1, Math.min(8, timesteps));
         
-        // If we need more history than we have, pad with zeros
+        // If history is empty or we need more history than we have, pad with the last known state or zeros
         while (this.history.length < this.currentTimesteps) {
-            this.history.push({ angle: 0, angularVelocity: 0 });
+            if (this.history.length > 0) {
+                // Duplicate the last known state
+                const lastState = this.history[this.history.length - 1];
+                this.history.push({ 
+                    angle: lastState.angle, 
+                    angularVelocity: lastState.angularVelocity,
+                    timestamp: Date.now()
+                });
+            } else {
+                // No history yet, use zeros as fallback
+                this.history.push({ 
+                    angle: 0, 
+                    angularVelocity: 0,
+                    timestamp: Date.now()
+                });
+            }
         }
     }
     
@@ -94,14 +108,8 @@ export class StateHistory {
      */
     reset() {
         this.history = [];
-        // Pre-fill with zeros for the maximum timesteps
-        for (let i = 0; i < this.maxTimesteps; i++) {
-            this.history.push({
-                angle: 0,
-                angularVelocity: 0,
-                timestamp: Date.now()
-            });
-        }
+        // Clear the buffer - it will be filled with actual states by the caller
+        // This allows the robot to pre-fill with appropriate initial states
     }
     
     /**

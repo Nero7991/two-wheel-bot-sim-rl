@@ -1327,6 +1327,10 @@ class TwoWheelBotRL {
         this.isPaused = false;
         this.demoMode = 'freerun';
         
+        // Reset training speed to normal for free run mode
+        this.trainingSpeed = 1.0;
+        this.targetPhysicsStepsPerFrame = 1;
+        
         // Reset training metrics while preserving the model
         this.episodeCount = 0;
         this.trainingStep = 0;
@@ -1384,6 +1388,11 @@ class TwoWheelBotRL {
         
         // Reset robot to clean state
         this.robot.reset();
+        
+        // Restart simulation with appropriate settings for free run mode
+        if (this.isInitialized) {
+            this.startSimulation();
+        }
         
         console.log('Training stopped and reset');
     }
@@ -1674,7 +1683,11 @@ class TwoWheelBotRL {
         if (this.demoMode === 'freerun') {
             // Free run mode: controlled by debugSpeed (Free Run Speed slider)
             // debugSpeed ranges from 0.1x to 2x
-            maxStepsPerFrame = Math.max(1, Math.round(this.debugSpeed * 3)); // 1-6 steps based on speed
+            // For multi-timestep models, ensure we run enough steps to populate history
+            const historyTimesteps = this.robot ? this.robot.historyTimesteps : 1;
+            const baseSteps = Math.max(1, Math.round(this.debugSpeed * 3)); // 1-6 steps based on speed
+            // Ensure at least as many steps as history timesteps for smooth operation
+            maxStepsPerFrame = Math.max(baseSteps, historyTimesteps);
         } else if (this.parallelModeEnabled) {
             // Parallel mode: main thread runs at maximum speed regardless of slider
             maxStepsPerFrame = 1000; // Max speed for parallel training
