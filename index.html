@@ -279,6 +279,101 @@
             100% { transform: rotate(360deg); }
         }
 
+        /* Welcome Dialog Styles */
+        .welcome-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .welcome-dialog {
+            background-color: #2d2d2d;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 2px solid #00d4ff;
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .welcome-dialog h2 {
+            color: #00d4ff;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+            text-align: center;
+        }
+
+        .welcome-dialog h3 {
+            color: #00ff88;
+            margin: 20px 0 10px 0;
+            font-size: 1.3rem;
+        }
+
+        .welcome-dialog p {
+            line-height: 1.6;
+            margin-bottom: 15px;
+            color: #e0e0e0;
+        }
+
+        .welcome-dialog .highlight {
+            color: #ffaa00;
+            font-weight: bold;
+        }
+
+        .welcome-dialog .step {
+            background-color: #1a1a1a;
+            padding: 12px;
+            margin: 10px 0;
+            border-left: 4px solid #00d4ff;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .welcome-dialog .step strong {
+            color: #00ff88;
+        }
+
+        .welcome-dialog .tip {
+            background-color: rgba(255, 170, 0, 0.1);
+            border: 1px solid #ffaa00;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+
+        .welcome-dialog .tip::before {
+            content: "💡 ";
+            margin-right: 8px;
+        }
+
+        .welcome-close-btn {
+            background-color: #00d4ff;
+            color: #1a1a1a;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: block;
+            margin: 25px auto 0;
+            transition: all 0.3s ease;
+        }
+
+        .welcome-close-btn:hover {
+            background-color: #00b8e6;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.4);
+        }
+
         /* On-screen controls for free run mode */
         #on-screen-controls {
             position: absolute;
@@ -1056,6 +1151,51 @@
                 <div class="spinner"></div>
                 <p style="margin-top: 10px;">Initializing WebGPU...</p>
             </div>
+        </div>
+    </div>
+
+    <!-- Welcome Dialog -->
+    <div id="welcome-overlay" class="welcome-overlay" style="display: none;">
+        <div class="welcome-dialog">
+            <h2>🤖 Two-Wheel Balancing Robot AI</h2>
+            
+            <p>Welcome to an interactive AI training simulator! This is a <span class="highlight">weekend project</span> built with <strong>Claude Code</strong> to demonstrate reinforcement learning in action.</p>
+            
+            <p>Watch an AI learn to balance a two-wheeled robot from scratch, just like a self-balancing hoverboard or Segway!</p>
+            
+            <h3>🎮 Manual Control</h3>
+            <div class="step">
+                <strong>Take Control:</strong> Use the <span class="highlight">arrow keys</span> or click the <span class="highlight">on-screen buttons</span> to manually balance the robot. Feel how challenging it is!
+            </div>
+            
+            <h3>🧠 Train an AI</h3>
+            <div class="step">
+                <strong>Step 1:</strong> Click <span class="highlight">"Start Training"</span> to begin AI learning
+            </div>
+            <div class="step">
+                <strong>Step 2:</strong> Watch the AI fail repeatedly at first - this is normal!
+            </div>
+            <div class="step">
+                <strong>Step 3:</strong> After 50-100 episodes, you'll see improvement in the reward chart
+            </div>
+            
+            <div class="tip">
+                <strong>Pro Tip:</strong> Once you see the AI learning (reward increasing), click <span class="highlight">"Parallel"</span> to speed up training using multiple CPU cores. This can train 10x faster!
+            </div>
+            
+            <h3>⚙️ Default Settings</h3>
+            <p>The default settings are optimized for quick learning. No need to change anything unless you're curious to experiment!</p>
+            
+            <h3>🎯 What to Expect</h3>
+            <p>• <strong>First 50 episodes:</strong> Complete chaos - the robot will fall immediately</p>
+            <p>• <strong>Episodes 50-200:</strong> Gradual improvement - brief moments of balance</p>
+            <p>• <strong>Episodes 200+:</strong> Stable balancing - the AI has learned!</p>
+            
+            <p style="text-align: center; margin-top: 25px; color: #888; font-style: italic;">
+                Built with ❤️ using Claude Code in a weekend
+            </p>
+            
+            <button class="welcome-close-btn" onclick="closeWelcomeDialog()">Let's Get Started!</button>
         </div>
     </div>
 

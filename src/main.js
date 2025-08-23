@@ -4352,3 +4352,52 @@ window.addEventListener('beforeunload', () => {
 
 // Export for potential external access
 window.TwoWheelBotRL = TwoWheelBotRL;
+
+// Welcome Dialog Functionality
+function showWelcomeDialog() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+        overlay.style.opacity = '0';
+        // Add fade-in animation
+        setTimeout(() => {
+            overlay.style.opacity = '1';
+        }, 10);
+    }
+}
+
+function closeWelcomeDialog() {
+    const overlay = document.getElementById('welcome-overlay');
+    if (overlay) {
+        overlay.style.opacity = '0';
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            // Mark as seen in localStorage
+            localStorage.setItem('twowheelbot-welcome-seen', 'true');
+        }, 300);
+    }
+}
+
+// Check if user has seen welcome dialog before
+function checkFirstVisit() {
+    const hasSeenWelcome = localStorage.getItem('twowheelbot-welcome-seen');
+    if (!hasSeenWelcome) {
+        // Show welcome dialog after a brief delay to ensure page is loaded
+        setTimeout(showWelcomeDialog, 1500);
+    }
+}
+
+// Make functions globally available
+window.closeWelcomeDialog = closeWelcomeDialog;
+window.showWelcomeDialog = showWelcomeDialog;
+
+// Check for first visit when the page loads
+document.addEventListener('DOMContentLoaded', checkFirstVisit);
+
+// Also check when the module loads (in case DOMContentLoaded already fired)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkFirstVisit);
+} else {
+    // DOM is already loaded
+    setTimeout(checkFirstVisit, 1500);
+}
