@@ -923,6 +923,9 @@ class TwoWheelBotRL {
         this.pdControllerEnabled = false; // Keep for compatibility during refactor
         this.userControlOnlyEnabled = false; // Keep for compatibility during refactor
         
+        // Track whether any training has occurred (for epsilon management)
+        this.hasEverTrained = false;
+        
         // Auto-reset toggle for free run mode
         this.autoResetEnabled = false; // Auto reset when robot goes off screen in free run mode (disabled by default)
         this.autoResetScheduled = false; // Flag to prevent multiple auto-reset timeouts
@@ -1275,9 +1278,28 @@ class TwoWheelBotRL {
     async startTraining() {
         if (this.isTraining) return;
         
+        // Check if we have a pre-trained model (loaded from file or previous training)
+        // Consider it pre-trained if: 1) any training has occurred, 2) we have episodes trained, or 3) model name suggests it's not a fresh model
+        const hasPreTrainedModel = this.qlearning && (
+            this.hasEverTrained ||
+            this.episodeCount > 0 || 
+            (this.currentModelName && 
+             this.currentModelName !== 'No model loaded' && 
+             !this.currentModelName.startsWith('Unsaved_DQN_'))
+        );
+        
         // Initialize Q-learning if not already done
         if (!this.qlearning) {
             await this.initializeQLearning();
+        }
+        
+        // For pre-trained models, use epsilon minimum to preserve learned behavior
+        if (hasPreTrainedModel && this.qlearning) {
+            const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
+            this.qlearning.hyperparams.epsilon = epsilonMin;
+            console.log(`Pre-trained model detected (hasEverTrained=${this.hasEverTrained}, episodes=${this.episodeCount}) - using epsilon minimum (${epsilonMin}) to preserve learned behavior`);
+        } else if (this.qlearning) {
+            console.log(`Fresh model detected - using epsilon from UI slider (${this.qlearning.hyperparams.epsilon}) for exploration`);
         }
         
         // CRITICAL FIX: Read current training speed from UI slider before starting
@@ -1351,9 +1373,9 @@ class TwoWheelBotRL {
         this.targetPhysicsStepsPerFrame = 1;
         
         // Reset training metrics while preserving the model
-        this.episodeCount = 0;
+        // NOTE: Don't reset episodeCount to preserve pre-trained model detection
         this.trainingStep = 0;
-        this.bestScore = 0;
+        // NOTE: Don't reset bestScore to preserve model performance history  
         this.currentReward = 0;
         
         // Reset Q-learning training state but keep the trained weights
@@ -1364,8 +1386,8 @@ class TwoWheelBotRL {
             this.qlearning.globalStepCount = 0;
             this.qlearning.lastTargetUpdate = 0;
             
-            // Reset epsilon to initial value for potential restart
-            this.qlearning.hyperparams.epsilon = this.qlearning.initialEpsilon || 0.9;
+            // Don't reset epsilon to preserve learned behavior when restarting training
+            // Epsilon will be properly set in startTraining() based on whether model is pre-trained
             
             // Clear replay buffer
             this.qlearning.replayBuffer.clear();
@@ -2716,6 +2738,7 @@ class TwoWheelBotRL {
                     
                     // Update episode count for each completed episode
                     this.episodeCount++;
+                    this.hasEverTrained = true; // Mark that training has occurred
                     
                     // Update best score if this episode was better
                     if (episodeReward > this.bestScore) {
@@ -2902,6 +2925,7 @@ class TwoWheelBotRL {
         if (this.demoMode === 'training' && this.isTraining) {
             // Only increment episode count during actual training
             this.episodeCount++;
+            this.hasEverTrained = true; // Mark that training has occurred
             
             // Performance monitoring for episode completion rate
             const now = Date.now();
@@ -4085,6 +4109,14 @@ class TwoWheelBotRL {
         this.episodeCount = saveData.episodesTrained || 0;
         this.bestScore = saveData.bestScore || 0;
         
+        // For loaded pre-trained models, set epsilon to minimum to preserve learned behavior
+        if (this.episodeCount > 0 && this.qlearning) {
+            this.hasEverTrained = true; // Mark that this is a trained model
+            const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
+            this.qlearning.hyperparams.epsilon = epsilonMin;
+            console.log(`Loaded pre-trained model with ${this.episodeCount} episodes - set epsilon to minimum (${epsilonMin}) to preserve learned behavior`);
+        }
+        
         // Set current model name and clear unsaved flag
         this.currentModelName = saveData.name;
         this.modelHasUnsavedChanges = false;
@@ -4300,6 +4332,14 @@ class TwoWheelBotRL {
         
         // Update target network to match
         this.qlearning.targetNetwork = this.qlearning.qNetwork.clone();
+        
+        // For imported pre-trained models, set epsilon to minimum to preserve learned behavior
+        if (this.qlearning) {
+            this.hasEverTrained = true; // Mark that this is a trained model
+            const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
+            this.qlearning.hyperparams.epsilon = epsilonMin;
+            console.log(`Imported pre-trained model - set epsilon to minimum (${epsilonMin}) to preserve learned behavior`);
+        }
         
         // Reset training state for imported model
         this.episodeCount = 0;
