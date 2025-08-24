@@ -915,11 +915,13 @@ class TwoWheelBotRL {
         // Simulation loop management
         this.simulationInterval = null;
         
-        // PD controller toggle state
-        this.pdControllerEnabled = true; // Start enabled in free run mode
+        // Control mode states - both start disabled (manual control only)
+        this.modelControlEnabled = false; // AI model control
+        this.pdControlEnabled = false; // Physics-based PD controller
         
-        // User control only mode
-        this.userControlOnlyEnabled = false; // When true, disables all assistance
+        // Legacy compatibility (to be removed gradually)
+        this.pdControllerEnabled = false; // Keep for compatibility during refactor
+        this.userControlOnlyEnabled = false; // Keep for compatibility during refactor
         
         // Auto-reset toggle for free run mode
         this.autoResetEnabled = false; // Auto reset when robot goes off screen in free run mode (disabled by default)
@@ -993,8 +995,8 @@ class TwoWheelBotRL {
             this.startSimulation();
             
             // Initialize UI state
-            this.updatePDControllerUI();
-            this.updateUserControlOnlyUI();
+            this.updateModelControlUI();
+            this.updatePDControlUI(); 
             this.updateAutoResetUI();
             this.updateFreeRunSpeedUI();
             this.updateModelDisplay('No model loaded', null);
@@ -1199,14 +1201,14 @@ class TwoWheelBotRL {
             }
         });
         
-        // PD Controller toggle
-        document.getElementById('toggle-pd-controller')?.addEventListener('click', () => {
-            this.togglePDController();
+        // Model Control toggle
+        document.getElementById('toggle-model-control')?.addEventListener('click', () => {
+            this.toggleModelControl();
         });
         
-        // User Control Only toggle
-        document.getElementById('toggle-user-control-only')?.addEventListener('click', () => {
-            this.toggleUserControlOnly();
+        // PD Control toggle
+        document.getElementById('toggle-pd-control')?.addEventListener('click', () => {
+            this.togglePDControl();
         });
         
         // Auto Reset toggle
@@ -1329,8 +1331,9 @@ class TwoWheelBotRL {
         
         document.getElementById('pause-training').disabled = false;
         
-        // Update PD controller UI (disabled during training)
-        this.updatePDControllerUI();
+        // Update control mode UIs (disabled during training)
+        this.updateModelControlUI();
+        this.updatePDControlUI();
         
         console.log('Training started');
     }
@@ -1398,8 +1401,8 @@ class TwoWheelBotRL {
         
         // Update training status display
         this.updateTrainingModelDisplay();
-        this.updatePDControllerUI();
-        this.updateUserControlOnlyUI();
+        this.updateModelControlUI();
+        this.updatePDControlUI();
         this.updateAutoResetUI();
         this.updateOnScreenControlsVisibility();
         
@@ -1434,9 +1437,13 @@ class TwoWheelBotRL {
         this.isPaused = false;
         this.parallelModeEnabled = false;
         this.demoMode = 'freerun'; // Reset to free run mode
-        this.pdControllerEnabled = true; // Reset to PD controller enabled
-        this.userControlOnlyEnabled = false; // Reset User Control Only
+        this.modelControlEnabled = false; // Reset to manual control only
+        this.pdControlEnabled = false; // Reset to manual control only
         this.autoResetEnabled = false; // Reset auto-reset to disabled
+        
+        // Legacy compatibility during transition
+        this.pdControllerEnabled = false;
+        this.userControlOnlyEnabled = false;
         this.autoResetScheduled = false; // Clear any pending auto-reset
         
         // Reset all training counters and metrics
@@ -1505,8 +1512,8 @@ class TwoWheelBotRL {
         
         // Update various UI components
         this.updateFreeRunSpeedUI();
-        this.updatePDControllerUI();
-        this.updateUserControlOnlyUI();
+        this.updateModelControlUI();
+        this.updatePDControlUI();
         this.updateAutoResetUI();
         this.updateOnScreenControlsVisibility();
         this.updateUI();
@@ -1778,19 +1785,17 @@ class TwoWheelBotRL {
                 case 'freerun':
                     // Free run mode: user input takes precedence, then assistance modes
                     if (this.manualControl.leftPressed || this.manualControl.rightPressed) {
-                        // User input always takes precedence when active
+                        // User input always takes precedence when active (arrow keys always work)
                         motorTorque = this.getManualTorque();
-                    } else if (this.userControlOnlyEnabled) {
-                        // User Control Only mode - no assistance
-                        motorTorque = 0;
-                    } else if (this.pdControllerEnabled) {
-                        // PD controller assistance
-                        motorTorque = this.getPhysicsDemoTorque();
-                    } else if (this.qlearning) {
-                        // Model control available if model loaded
+                    } else if (this.modelControlEnabled && this.qlearning) {
+                        // Model control enabled and model available
                         motorTorque = this.getEvaluationTorque();
+                    } else if (this.pdControlEnabled) {
+                        // PD controller enabled
+                        motorTorque = this.getPhysicsDemoTorque();
                     } else {
-                        motorTorque = 0; // No control active
+                        // Manual control only (both toggles disabled)
+                        motorTorque = 0;
                     }
                     break;
                 case 'training':
@@ -1802,13 +1807,14 @@ class TwoWheelBotRL {
                         // When training paused/stopped: user arrows take precedence, then assistance modes
                         if (this.userControlEnabled && (this.manualControl.leftPressed || this.manualControl.rightPressed)) {
                             motorTorque = this.getManualTorque();
-                        } else if (this.userControlOnlyEnabled) {
-                            motorTorque = 0; // User Control Only mode
-                        } else if (this.pdControllerEnabled) {
-                            motorTorque = this.getPhysicsDemoTorque();
-                        } else if (this.qlearning) {
+                        } else if (this.modelControlEnabled && this.qlearning) {
+                            // Model control enabled and model available
                             motorTorque = this.getEvaluationTorque();
+                        } else if (this.pdControlEnabled) {
+                            // PD controller enabled
+                            motorTorque = this.getPhysicsDemoTorque();
                         } else {
+                            // Manual control only (both toggles disabled)
                             motorTorque = 0;
                         }
                     }
@@ -3058,8 +3064,9 @@ class TwoWheelBotRL {
             console.log('Manual control enabled. Use arrow keys: ← → to balance, ↑ to reset');
         }
         
-        // Update PD controller UI based on new mode
-        this.updatePDControllerUI();
+        // Update control mode UI based on new mode
+        this.updateModelControlUI();
+        this.updatePDControlUI();
         this.updateUserControlUI();
         this.updateRewardTypeUI();
         this.updateOnScreenControlsVisibility();
@@ -3144,14 +3151,14 @@ class TwoWheelBotRL {
         this.isTraining = false;
         this.isPaused = false;
         
-        // Disable PD controller and User Control Only to enable model control
-        this.pdControllerEnabled = false;
-        this.userControlOnlyEnabled = false;
+        // Enable model control and disable PD control
+        this.modelControlEnabled = true;
+        this.pdControlEnabled = false;
         
-        // Update UI states
+        // Update UI states  
         this.updateFreeRunSpeedUI();
-        this.updatePDControllerUI();
-        this.updateUserControlOnlyUI();
+        this.updateModelControlUI();
+        this.updatePDControlUI();
         this.updateAutoResetUI();
         
         // Reset robot to a clean state for testing
@@ -3452,52 +3459,135 @@ class TwoWheelBotRL {
     }
     
     /**
-     * Toggle PD controller on/off (switches between PD and Model control)
+     * Toggle Model Control on/off (AI model assistance)
      */
-    togglePDController() {
-        // Don't allow PD controller during training or evaluation
-        if ((this.demoMode === 'training' && this.isTraining) || this.demoMode === 'evaluation') {
-            console.log('PD Controller cannot be enabled during training or model testing');
-            return;
-        }
-        
-        // If we're in free run mode and trying to disable PD (switch to model), check if model exists
-        if (this.demoMode === 'freerun' && this.pdControllerEnabled && !this.qlearning) {
-            // User is trying to switch to model control but no model is loaded
-            alert('No model loaded!\n\nTo use Model Control, you need to:\n• Train a model (Start Training)\n• Load a saved model (Model Management)\n• Import a pre-trained model\n\nPD Controller will remain active.');
-            return; // Don't toggle, keep PD controller enabled
-        }
-        
-        this.pdControllerEnabled = !this.pdControllerEnabled;
-        this.updatePDControllerUI();
-        
-        // Reset robot to clean state when changing control modes
-        this.resetRobotPosition();
-        
-        console.log('PD Controller', this.pdControllerEnabled ? 'enabled' : 'disabled');
-    }
-    
-    /**
-     * Toggle User Control Only mode on/off
-     */
-    toggleUserControlOnly() {
+    toggleModelControl() {
         // Don't allow during training or evaluation
         if ((this.demoMode === 'training' && this.isTraining) || this.demoMode === 'evaluation') {
-            console.log('User Control Only cannot be enabled during training or model testing');
             return;
         }
         
-        this.userControlOnlyEnabled = !this.userControlOnlyEnabled;
-        this.updateUserControlOnlyUI();
+        // Check if trying to enable model control without a model
+        if (!this.modelControlEnabled && !this.qlearning) {
+            // User is trying to enable model control but no model is loaded
+            alert('No model loaded!\n\nTo use Model Control, you need to:\n• Train a model (Start Training)\n• Load a saved model (Model Management)\n• Import a pre-trained model\n\nModel Control will remain disabled.');
+            return;
+        }
+        
+        // Toggle model control
+        this.modelControlEnabled = !this.modelControlEnabled;
+        
+        // If enabling model control, disable PD control (mutual exclusivity)
+        if (this.modelControlEnabled) {
+            this.pdControlEnabled = false;
+            this.updatePDControlUI();
+        }
+        
+        this.updateModelControlUI();
         
         // Reset robot to clean state when changing control modes
         this.resetRobotPosition();
         
-        console.log('User Control Only', this.userControlOnlyEnabled ? 'enabled' : 'disabled');
+        console.log('Model Control', this.modelControlEnabled ? 'enabled' : 'disabled');
     }
     
     /**
-     * Update PD controller button UI
+     * Toggle PD Control on/off (physics-based balancing)
+     */
+    togglePDControl() {
+        // Don't allow during training or evaluation
+        if ((this.demoMode === 'training' && this.isTraining) || this.demoMode === 'evaluation') {
+            return;
+        }
+        
+        // Toggle PD control
+        this.pdControlEnabled = !this.pdControlEnabled;
+        
+        // If enabling PD control, disable model control (mutual exclusivity)
+        if (this.pdControlEnabled) {
+            this.modelControlEnabled = false;
+            this.updateModelControlUI();
+        }
+        
+        this.updatePDControlUI();
+        
+        // Reset robot to clean state when changing control modes
+        this.resetRobotPosition();
+        
+        console.log('PD Control', this.pdControlEnabled ? 'enabled' : 'disabled');
+    }
+    
+    /**
+     * Legacy function - kept for compatibility during refactor
+     */
+    togglePDController() {
+        this.togglePDControl();
+    }
+    
+    /**
+     * Legacy function - kept for compatibility during refactor  
+     */
+    toggleUserControlOnly() {
+        // This functionality is now handled by having both controls disabled
+        console.log('User Control Only is now the default when both Model Control and PD Control are disabled');
+    }
+    
+    /**
+     * Update Model Control button UI
+     */
+    updateModelControlUI() {
+        const button = document.getElementById('toggle-model-control');
+        const text = document.getElementById('model-control-text');
+        const status = document.getElementById('model-control-status');
+        
+        if (!button || !text || !status) return;
+        
+        // Disable during training/testing
+        const shouldDisable = (this.demoMode === 'training' && this.isTraining) || this.demoMode === 'evaluation';
+        
+        if (shouldDisable) {
+            button.disabled = true;
+            text.textContent = 'Model Control';
+            status.textContent = '(Disabled during training/testing)';
+            status.style.color = '#666';
+            this.modelControlEnabled = false;
+        } else {
+            button.disabled = false;
+            text.textContent = 'Model Control';
+            status.textContent = this.modelControlEnabled ? '(Enabled)' : '(Disabled)';
+            status.style.color = this.modelControlEnabled ? '#00ff88' : '#888';
+        }
+    }
+    
+    /**
+     * Update PD Control button UI  
+     */
+    updatePDControlUI() {
+        const button = document.getElementById('toggle-pd-control');
+        const text = document.getElementById('pd-control-text');
+        const status = document.getElementById('pd-control-status');
+        
+        if (!button || !text || !status) return;
+        
+        // Disable during training/testing
+        const shouldDisable = (this.demoMode === 'training' && this.isTraining) || this.demoMode === 'evaluation';
+        
+        if (shouldDisable) {
+            button.disabled = true;
+            text.textContent = 'PD Control';
+            status.textContent = '(Disabled during training/testing)';
+            status.style.color = '#666';
+            this.pdControlEnabled = false;
+        } else {
+            button.disabled = false;
+            text.textContent = 'PD Control';
+            status.textContent = this.pdControlEnabled ? '(Enabled)' : '(Disabled)';
+            status.style.color = this.pdControlEnabled ? '#0099ff' : '#888';
+        }
+    }
+
+    /**
+     * Update PD controller button UI (legacy - for compatibility)
      */
     updatePDControllerUI() {
         const button = document.getElementById('toggle-pd-controller');
@@ -3571,6 +3661,43 @@ class TwoWheelBotRL {
     toggleAutoReset() {
         this.autoResetEnabled = !this.autoResetEnabled;
         this.updateAutoResetUI();
+        
+        // If auto-reset was just enabled and simulation is paused in free run mode,
+        // trigger an immediate reset (robot likely went off-screen/fell)
+        if (this.autoResetEnabled && this.demoMode === 'freerun' && this.isPaused && !this.autoResetScheduled) {
+            console.log('Auto-reset enabled while simulation paused - triggering immediate reset...');
+            
+            // Schedule immediate reset (no delay since user explicitly enabled auto-reset)
+            this.autoResetScheduled = true;
+            setTimeout(() => {
+                if (this.demoMode === 'freerun' && this.autoResetEnabled) {
+                    console.log('Executing immediate auto-reset...');
+                    
+                    // Reset robot position
+                    let resetAngle = 0;
+                    if (this.demoMode === 'freerun' && Math.abs(this.resetAngleDegrees) > 0) {
+                        const angleDegrees = this.resetAngleDegrees || 0.0;
+                        resetAngle = angleDegrees * Math.PI / 180;
+                    }
+                    
+                    this.robot.reset({
+                        angle: resetAngle,
+                        angularVelocity: 0,
+                        position: 0,
+                        velocity: 0
+                    });
+                    
+                    // Reset performance timing and resume simulation
+                    this.lastFrameTime = 0;
+                    this.lastPhysicsUpdate = 0;
+                    this.frameTimeHistory = [];
+                    this.isPaused = false;
+                    this.autoResetScheduled = false;
+                    
+                    console.log('Immediate auto-reset completed - simulation resumed');
+                }
+            }, 100); // Very short delay to allow UI update
+        }
         
         console.log('Auto Reset', this.autoResetEnabled ? 'enabled' : 'disabled');
     }

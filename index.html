@@ -1199,13 +1199,13 @@
                         </div>
                         
                         <div style="padding: 10px 0; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
-                            <button id="toggle-pd-controller" class="control-btn" style="min-width: 180px; white-space: nowrap;">
-                                <span id="pd-controller-text">Switch to Model Control</span>
-                                <br><span id="pd-controller-status" style="font-size: 0.8em; color: #00ff88;">(PD Controller Active)</span>
+                            <button id="toggle-model-control" class="control-btn" style="min-width: 180px; white-space: nowrap;">
+                                <span id="model-control-text">Model Control</span>
+                                <br><span id="model-control-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
                             </button>
-                            <button id="toggle-user-control-only" class="control-btn" style="min-width: 180px; white-space: nowrap;">
-                                <span id="user-control-text">Enable User Control Only</span>
-                                <br><span id="user-control-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
+                            <button id="toggle-pd-control" class="control-btn" style="min-width: 180px; white-space: nowrap;">
+                                <span id="pd-control-text">PD Control</span>
+                                <br><span id="pd-control-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
                             </button>
                             <button id="toggle-auto-reset" class="control-btn" style="min-width: 180px; white-space: nowrap;">
                                 <span id="auto-reset-text">Enable Auto Reset</span>
@@ -1621,7 +1621,7 @@
             <h3>Manual Control</h3>
             <div class="step">
                 <strong>Take Control</strong>
-                Click <span class="highlight">"Enable User Control Only"</span> to disable the controller, then use <span class="highlight">arrow keys</span> or <span class="highlight">on-screen buttons</span> to manually balance the robot. Experience how challenging it is!
+                Disable PD and Model Control (disabled by default), then use <span class="highlight">arrow keys</span> or <span class="highlight">on-screen buttons</span> to manually balance the robot. Experience how challenging it is!
             </div>
             
             <h3>Train a Model</h3>
