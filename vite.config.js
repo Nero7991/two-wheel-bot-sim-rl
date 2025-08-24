@@ -6,7 +6,7 @@ export default defineConfig({
     port: 3006,
     host: '0.0.0.0', // Bind to all interfaces for external access
     cors: true,
-    allowedHosts: ['apps.orenslab.com', 'botsim.orenslab.com'],
+    allowedHosts: ['apps.orenslab.com', 'botsim.orenslab.com', 'code.orenslab.com'],
     watch: {
       usePolling: true,
       interval: 1000,

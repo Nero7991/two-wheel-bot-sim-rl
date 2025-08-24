@@ -1039,14 +1039,14 @@ class TwoWheelBotRL {
             targetFPS: 60
         });
         
-        // Add debounced resize listener to prevent excessive canvas resizing
-        let resizeTimeout;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                this.resizeCanvas();
-            }, 150); // 150ms debounce
-        });
+        // Canvas resizing on window resize disabled per user request
+        // let resizeTimeout;
+        // window.addEventListener('resize', () => {
+        //     clearTimeout(resizeTimeout);
+        //     resizeTimeout = setTimeout(() => {
+        //         this.resizeCanvas();
+        //     }, 150); // 150ms debounce
+        // });
         
         // Initialize performance charts
         const chartsPanel = document.getElementById('charts-panel');
@@ -1516,7 +1516,7 @@ class TwoWheelBotRL {
 
     resizeCanvas() {
         const container = document.getElementById('main-container');
-        const controlsPanel = document.getElementById('controls-panel');
+        const canvasWrapper = document.getElementById('canvas-wrapper');
         
         // Check if we're in mobile mode (stacked layout)
         const isMobileLayout = window.innerWidth <= 1024;
@@ -1524,52 +1524,36 @@ class TwoWheelBotRL {
         let availableWidth, availableHeight;
         
         if (isMobileLayout) {
-            // Mobile: canvas takes full width, height is set by CSS
+            // Mobile: canvas takes full width, height calculated based on viewport
             availableWidth = container.clientWidth;
             
-            // Get the height from CSS (set by responsive rules)
-            const canvasStyle = getComputedStyle(this.canvas);
-            const cssHeight = canvasStyle.height;
+            // Calculate height based on viewport and screen size
+            const headerHeight = document.getElementById('header').offsetHeight || 60;
+            const viewportHeight = window.innerHeight;
             
-            if (cssHeight && cssHeight !== 'auto') {
-                availableHeight = parseInt(cssHeight);
+            // Mobile canvas should be about 40-60% of viewport height based on screen size
+            if (window.innerWidth <= 480) {
+                availableHeight = Math.max(300, (viewportHeight - headerHeight) * 0.4);
+            } else if (window.innerWidth <= 768) {
+                availableHeight = Math.max(350, (viewportHeight - headerHeight) * 0.5);
             } else {
-                // Fallback: calculate based on viewport height
-                const headerHeight = document.getElementById('header').offsetHeight || 60;
-                const viewportHeight = window.innerHeight;
-                
-                // Mobile canvas should be about 40-60% of viewport height based on screen size
-                if (window.innerWidth <= 480) {
-                    availableHeight = Math.max(300, (viewportHeight - headerHeight) * 0.4);
-                } else if (window.innerWidth <= 768) {
-                    availableHeight = Math.max(350, (viewportHeight - headerHeight) * 0.5);
-                } else {
-                    availableHeight = Math.max(400, (viewportHeight - headerHeight) * 0.6);
-                }
+                availableHeight = Math.max(400, (viewportHeight - headerHeight) * 0.6);
             }
-        } else {
-            // Desktop: canvas takes available width minus controls panel
-            const containerWidth = container.clientWidth;
-            const containerHeight = container.clientHeight;
-            const controlsPanelWidth = controlsPanel ? controlsPanel.offsetWidth : 300;
             
-            availableWidth = containerWidth - controlsPanelWidth;
-            availableHeight = containerHeight;
+            // Make sure we don't exceed the container height
+            availableHeight = Math.min(availableHeight, container.clientHeight * 0.9);
+        } else {
+            // Desktop: canvas respects the wrapper's fixed dimensions
+            availableWidth = canvasWrapper.clientWidth;
+            availableHeight = canvasWrapper.clientHeight || container.clientHeight;
         }
         
         // Use device pixel ratio for crisp rendering on high-DPI displays
         const dpr = window.devicePixelRatio || 1;
         
-        // Set canvas display size (CSS pixels) - but don't override CSS on mobile
-        if (!isMobileLayout) {
-            this.canvas.style.width = availableWidth + 'px';
-            this.canvas.style.height = availableHeight + 'px';
-        } else {
-            // On mobile, let CSS handle the display size, just get the computed values
-            const computedStyle = getComputedStyle(this.canvas);
-            availableWidth = parseInt(computedStyle.width) || availableWidth;
-            availableHeight = parseInt(computedStyle.height) || availableHeight;
-        }
+        // Set canvas display size (CSS pixels)  
+        this.canvas.style.width = availableWidth + 'px';
+        this.canvas.style.height = availableHeight + 'px';
         
         // Set canvas actual size (device pixels)
         const actualWidth = availableWidth * dpr;
