@@ -25,7 +25,12 @@ export class BaseChart {
             lineColor: config.lineColor || '#00d4ff',
             textColor: config.textColor || '#ffffff',
             axisColor: config.axisColor || '#666666',
-            padding: config.padding || 40,
+            paddingLeft: config.paddingLeft || 80,
+            paddingRight: config.paddingRight || 20,
+            paddingTop: config.paddingTop || 30,
+            paddingBottom: config.paddingBottom || 35,
+            // Keep old padding for backwards compatibility
+            padding: config.padding || 80,
             maxDataPoints: config.maxDataPoints || 100,
             title: config.title || '',
             yLabel: config.yLabel || '',
@@ -38,6 +43,12 @@ export class BaseChart {
         this.minY = 0;
         this.maxY = 1;
         this.autoScale = config.autoScale !== false;
+        
+        // Helper methods for consistent padding access
+        this.getLeftPadding = () => this.config.paddingLeft;
+        this.getRightPadding = () => this.config.paddingRight;
+        this.getTopPadding = () => this.config.paddingTop;
+        this.getBottomPadding = () => this.config.paddingBottom;
     }
     
     /**
@@ -93,23 +104,23 @@ export class BaseChart {
      * @returns {Object} Canvas coordinates {x, y}
      */
     dataToCanvas(x, y) {
-        const chartWidth = this.canvas.width - 2 * this.config.padding;
-        const chartHeight = this.canvas.height - 2 * this.config.padding;
+        const chartWidth = this.canvas.width - this.config.paddingLeft - this.config.paddingRight;
+        const chartHeight = this.canvas.height - this.config.paddingTop - this.config.paddingBottom;
         
-        let canvasX = this.config.padding;
+        let canvasX = this.config.paddingLeft;
         if (this.data.length > 1) {
             const minX = Math.min(...this.data.map(d => d.x));
             const maxX = Math.max(...this.data.map(d => d.x));
             const xRange = maxX - minX;
             if (xRange > 0) {
-                canvasX = this.config.padding + ((x - minX) / xRange) * chartWidth;
+                canvasX = this.config.paddingLeft + ((x - minX) / xRange) * chartWidth;
             }
         }
         
         const yRange = this.maxY - this.minY;
-        let canvasY = this.canvas.height - this.config.padding;
+        let canvasY = this.canvas.height - this.config.paddingBottom;
         if (yRange > 0) {
-            canvasY = this.canvas.height - this.config.padding - ((y - this.minY) / yRange) * chartHeight;
+            canvasY = this.canvas.height - this.config.paddingBottom - ((y - this.minY) / yRange) * chartHeight;
         }
         
         return { x: canvasX, y: canvasY };
@@ -126,10 +137,10 @@ export class BaseChart {
         // Draw chart area background
         this.ctx.fillStyle = '#0a0a0a';
         this.ctx.fillRect(
-            this.config.padding,
-            this.config.padding,
-            this.canvas.width - 2 * this.config.padding,
-            this.canvas.height - 2 * this.config.padding
+            this.config.paddingLeft,
+            this.config.paddingTop,
+            this.canvas.width - this.config.paddingLeft - this.config.paddingRight,
+            this.canvas.height - this.config.paddingTop - this.config.paddingBottom
         );
         
         if (this.config.showGrid) {
@@ -148,26 +159,26 @@ export class BaseChart {
         this.ctx.lineWidth = 1;
         this.ctx.globalAlpha = 0.3;
         
-        const chartWidth = this.canvas.width - 2 * this.config.padding;
-        const chartHeight = this.canvas.height - 2 * this.config.padding;
+        const chartWidth = this.canvas.width - this.config.paddingLeft - this.config.paddingRight;
+        const chartHeight = this.canvas.height - this.config.paddingTop - this.config.paddingBottom;
         
         // Vertical grid lines
         const numVerticalLines = 10;
         for (let i = 0; i <= numVerticalLines; i++) {
-            const x = this.config.padding + (i / numVerticalLines) * chartWidth;
+            const x = this.config.paddingLeft + (i / numVerticalLines) * chartWidth;
             this.ctx.beginPath();
-            this.ctx.moveTo(x, this.config.padding);
-            this.ctx.lineTo(x, this.canvas.height - this.config.padding);
+            this.ctx.moveTo(x, this.config.paddingTop);
+            this.ctx.lineTo(x, this.canvas.height - this.config.paddingBottom);
             this.ctx.stroke();
         }
         
         // Horizontal grid lines
         const numHorizontalLines = 8;
         for (let i = 0; i <= numHorizontalLines; i++) {
-            const y = this.config.padding + (i / numHorizontalLines) * chartHeight;
+            const y = this.config.paddingTop + (i / numHorizontalLines) * chartHeight;
             this.ctx.beginPath();
-            this.ctx.moveTo(this.config.padding, y);
-            this.ctx.lineTo(this.canvas.width - this.config.padding, y);
+            this.ctx.moveTo(this.config.paddingLeft, y);
+            this.ctx.lineTo(this.canvas.width - this.config.paddingRight, y);
             this.ctx.stroke();
         }
         
@@ -183,14 +194,14 @@ export class BaseChart {
         
         // X axis
         this.ctx.beginPath();
-        this.ctx.moveTo(this.config.padding, this.canvas.height - this.config.padding);
-        this.ctx.lineTo(this.canvas.width - this.config.padding, this.canvas.height - this.config.padding);
+        this.ctx.moveTo(this.config.paddingLeft, this.canvas.height - this.config.paddingBottom);
+        this.ctx.lineTo(this.canvas.width - this.config.paddingRight, this.canvas.height - this.config.paddingBottom);
         this.ctx.stroke();
         
         // Y axis
         this.ctx.beginPath();
-        this.ctx.moveTo(this.config.padding, this.config.padding);
-        this.ctx.lineTo(this.config.padding, this.canvas.height - this.config.padding);
+        this.ctx.moveTo(this.config.paddingLeft, this.config.paddingTop);
+        this.ctx.lineTo(this.config.paddingLeft, this.canvas.height - this.config.paddingBottom);
         this.ctx.stroke();
     }
     
@@ -205,19 +216,19 @@ export class BaseChart {
         // Title
         if (this.config.title) {
             this.ctx.font = '14px monospace';
-            this.ctx.fillText(this.config.title, this.canvas.width / 2, 20);
+            this.ctx.fillText(this.config.title, this.canvas.width / 2, 15);
             this.ctx.font = '12px monospace';
         }
         
         // X axis label
         if (this.config.xLabel) {
-            this.ctx.fillText(this.config.xLabel, this.canvas.width / 2, this.canvas.height - 5);
+            this.ctx.fillText(this.config.xLabel, this.canvas.width / 2, this.canvas.height - 10);
         }
         
         // Y axis label (rotated)
         if (this.config.yLabel) {
             this.ctx.save();
-            this.ctx.translate(15, this.canvas.height / 2);
+            this.ctx.translate(25, this.canvas.height / 2);
             this.ctx.rotate(-Math.PI / 2);
             this.ctx.fillText(this.config.yLabel, 0, 0);
             this.ctx.restore();
@@ -229,8 +240,8 @@ export class BaseChart {
         const numYLabels = 5;
         for (let i = 0; i <= numYLabels; i++) {
             const value = this.minY + (this.maxY - this.minY) * (1 - i / numYLabels);
-            const y = this.config.padding + (i / numYLabels) * (this.canvas.height - 2 * this.config.padding);
-            this.ctx.fillText(value.toFixed(2), this.config.padding - 5, y + 3);
+            const y = this.config.paddingTop + (i / numYLabels) * (this.canvas.height - this.config.paddingTop - this.config.paddingBottom);
+            this.ctx.fillText(value.toFixed(2), this.config.paddingLeft - 10, y + 3);
         }
     }
     
