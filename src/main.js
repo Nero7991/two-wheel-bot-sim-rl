@@ -46,7 +46,7 @@ class UIControls {
             
             // Robot Physics Parameters
             robotMass: 1.0,
-            robotHeight: 0.4,
+            robotHeight: 0.5,
             motorStrength: 5.0,
             wheelFriction: 0.3,
             maxAngle: Math.PI / 6, // 30 degrees
@@ -750,7 +750,7 @@ class UIControls {
             
             // Robot Physics Parameters
             robotMass: 1.0,
-            robotHeight: 0.4,
+            robotHeight: 0.5,
             motorStrength: 5.0,
             wheelFriction: 0.3
         };
