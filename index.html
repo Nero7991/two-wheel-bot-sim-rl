@@ -336,6 +336,42 @@
             overflow-y: auto;
             box-shadow: 0 20px 80px rgba(0, 0, 0, 0.3);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            position: relative;
+        }
+        
+        .welcome-dialog .close-x {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 30px;
+            height: 30px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 24px;
+            color: #666;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        
+        .welcome-dialog .close-x:hover {
+            background-color: #e8e8ed;
+            color: #1d1d1f;
+        }
+        
+        .welcome-dialog a {
+            color: #0071e3;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        
+        .welcome-dialog a:hover {
+            color: #0051d5;
+            text-decoration: underline;
         }
 
         .welcome-dialog h2 {
@@ -560,15 +596,16 @@
         }
 
         /* Remove arrow for Training Control section but keep it collapsible */
-        .control-section:first-of-type h3::after {
+        /* Arrow should show for all sections now */
+        .control-section.no-arrow h3::after {
             display: none;
         }
 
-        .control-section:first-of-type {
+        .control-section.no-arrow {
             margin-top: 15px;
         }
 
-        .control-section:first-of-type h3 {
+        .control-section.no-arrow h3 {
             padding-right: 0;
         }
 
@@ -1137,40 +1174,45 @@
             </div>
             
             <div id="controls-panel">
-                <div class="slider-container" style="margin-bottom: 1px; padding: 4px;">
-                    <label for="debug-speed" class="tooltip" data-tooltip="Control simulation speed during free run mode (0.1x = 10x slower, 2x = 2x faster)">
-                        Free Run Speed: <span id="debug-speed-value" class="slider-value">1.0x</span>
-                    </label>
-                    <input type="range" id="debug-speed" min="0.1" max="2.0" step="0.1" value="1.0">
-                    
-                    <div style="margin-top: 10px;">
-                        <label for="offset-angle-error" class="tooltip" data-tooltip="Simulate sensor offset error between actual and measured angle (-10 to +10 degrees). Useful for testing offset-adaptive reward learning">
-                            Offset Angle Error: <span id="offset-angle-error-value" class="slider-value">0.0°</span>
-                        </label>
-                        <input type="range" id="offset-angle-error" min="-10" max="10" step="0.1" value="0" onchange="console.log('Offset angle slider changed to:', this.value)">
+                <div class="control-section collapsed">
+                    <h3>Free Run Control</h3>
+                    <div class="control-section-content">
+                        <div class="slider-container" style="padding: 4px;">
+                            <label for="debug-speed" class="tooltip" data-tooltip="Control simulation speed during free run mode (0.1x = 10x slower, 2x = 2x faster)">
+                                Free Run Speed: <span id="debug-speed-value" class="slider-value">1.0x</span>
+                            </label>
+                            <input type="range" id="debug-speed" min="0.1" max="2.0" step="0.1" value="1.0">
+                            
+                            <div style="margin-top: 10px;">
+                                <label for="offset-angle-error" class="tooltip" data-tooltip="Simulate sensor offset error between actual and measured angle (-10 to +10 degrees). Useful for testing offset-adaptive reward learning">
+                                    Offset Angle Error: <span id="offset-angle-error-value" class="slider-value">0.0°</span>
+                                </label>
+                                <input type="range" id="offset-angle-error" min="-10" max="10" step="0.1" value="0" onchange="console.log('Offset angle slider changed to:', this.value)">
+                            </div>
+                            
+                            <div style="margin-top: 10px;">
+                                <label for="reset-angle" class="tooltip" data-tooltip="Angle to set when reset is pressed (-30 to +30 degrees). Robot will start at this exact angle">
+                                    Reset Angle: <span id="reset-angle-value" class="slider-value">0.0°</span>
+                                </label>
+                                <input type="range" id="reset-angle" min="-30" max="30" step="0.5" value="0" onchange="console.log('Reset angle slider changed to:', this.value)">
+                            </div>
+                        </div>
+                        
+                        <div style="padding: 10px 0; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+                            <button id="toggle-pd-controller" class="control-btn" style="min-width: 180px; white-space: nowrap;">
+                                <span id="pd-controller-text">Switch to Model Control</span>
+                                <br><span id="pd-controller-status" style="font-size: 0.8em; color: #00ff88;">(PD Controller Active)</span>
+                            </button>
+                            <button id="toggle-user-control-only" class="control-btn" style="min-width: 180px; white-space: nowrap;">
+                                <span id="user-control-text">Enable User Control Only</span>
+                                <br><span id="user-control-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
+                            </button>
+                            <button id="toggle-auto-reset" class="control-btn" style="min-width: 180px; white-space: nowrap;">
+                                <span id="auto-reset-text">Enable Auto Reset</span>
+                                <br><span id="auto-reset-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
+                            </button>
+                        </div>
                     </div>
-                    
-                    <div style="margin-top: 10px;">
-                        <label for="reset-angle" class="tooltip" data-tooltip="Angle to set when reset is pressed (-30 to +30 degrees). Robot will start at this exact angle">
-                            Reset Angle: <span id="reset-angle-value" class="slider-value">0.0°</span>
-                        </label>
-                        <input type="range" id="reset-angle" min="-30" max="30" step="0.5" value="0" onchange="console.log('Reset angle slider changed to:', this.value)">
-                    </div>
-                </div>
-                
-                <div style="padding: 15px 10px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 4px;">
-                    <button id="toggle-pd-controller" class="control-btn" style="min-width: 180px; white-space: nowrap;">
-                        <span id="pd-controller-text">Disable PD Controller</span>
-                        <br><span id="pd-controller-status" style="font-size: 0.8em; color: #00ff88;">(Active)</span>
-                    </button>
-                    <button id="toggle-user-control-only" class="control-btn" style="min-width: 180px; white-space: nowrap;">
-                        <span id="user-control-text">Enable User Control Only</span>
-                        <br><span id="user-control-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
-                    </button>
-                    <button id="toggle-auto-reset" class="control-btn" style="min-width: 180px; white-space: nowrap;">
-                        <span id="auto-reset-text">Enable Auto Reset</span>
-                        <br><span id="auto-reset-status" style="font-size: 0.8em; color: #888;">(Disabled)</span>
-                    </button>
                 </div>
                 
                 <div class="control-section">
@@ -1559,11 +1601,22 @@
     <!-- Welcome Dialog -->
     <div id="welcome-overlay" class="welcome-overlay" style="display: none;">
         <div class="welcome-dialog">
+            <button class="close-x" onclick="closeWelcomeDialog()" aria-label="Close">×</button>
             <h2>Two-wheel Balancing Bot Environment</h2>
             
-            <p>Welcome to an interactive machine learning training simulator that demonstrates reinforcement learning in action.</p>
+            <p style="text-align: center; margin-bottom: 20px;">
+                <a href="https://github.com/Nero7991/two-wheel-bot-sim-rl" target="_blank" style="font-weight: 600;">
+                    GitHub Repository
+                </a>
+            </p>
+
+            <p>Welcome to an interactive machine learning training simulator that demonstrates reinforcement learning (reward based) in action.</p>
             
-            <p>Watch a neural network learn to balance a two-wheeled robot from scratch, similar to a self-balancing hoverboard or Segway.</p>
+            <p>Train a neural network to balance a two-wheeled robot directly in your browser. This simulator uses Deep Q-Network (DQN) reinforcement learning with optional WebGPU acceleration for fast training. Export trained models as C++ code for real hardware deployment on microcontrollers like the STM32WL55.</p>
+            
+            <p>Successfully tested on an <a href="https://www.amazon.com/dp/B08817B5Q4" target="_blank">Adeept Self-Balancing Robot Kit</a> with firmware available at <a href="https://github.com/Nero7991/two-wheel-bot-firmware" target="_blank">github.com/Nero7991/two-wheel-bot-firmware</a>.</p>
+              
+            <p>Watch a neural network learn to balance a two-wheeled robot from scratch, similar to a self-balancing hoverboard or Segway as the episodes go on.</p>
             
             <h3>Manual Control</h3>
             <div class="step">
@@ -1582,11 +1635,11 @@
             </div>
             <div class="step">
                 <strong>Step 3</strong>
-                After 50-100 episodes, you'll see improvement in the reward chart
+                After 100-500 episodes, you'll see improvement in the reward chart
             </div>
             
             <div class="tip">
-                <strong>Pro Tip:</strong> Once you see the model learning (reward increasing), click <span class="highlight">"Parallel"</span> to speed up training using multiple CPU cores. This can train 10× faster.
+                <strong>Pro Tip:</strong> Click <span class="highlight">"Parallel"</span> to speed up training using multiple CPU core (or workers/threads). This can train faster. Use slower speeds to observe it learn.
             </div>
             
             <h3>Test or Import Models</h3>
@@ -1603,12 +1656,12 @@
             <p>The default settings are optimized for quick learning. No adjustments needed unless you want to experiment.</p>
             
             <h3>What to Expect</h3>
-            <p>• <strong>First 50 episodes:</strong> Complete chaos — the robot will fall immediately</p>
-            <p>• <strong>Episodes 50-200:</strong> Gradual improvement — brief moments of balance</p>
-            <p>• <strong>Episodes 200+:</strong> Stable balancing — the model has learned</p>
+            <p>• <strong>First 100 episodes:</strong> Complete chaos — the robot will fall immediately</p>
+            <p>• <strong>Episodes 100-500:</strong> Gradual improvement — brief moments of balance, although each session is random. Sometimes it might learn earlier, other times take longer</p>
+            <p>• <strong>Episodes 500+:</strong> Stable balancing — the model has learned</p>
             
             
-            <button class="welcome-close-btn" onclick="closeWelcomeDialog()">Get Started</button>
+            <button class="welcome-close-btn" onclick="closeWelcomeDialog()">Close</button>
         </div>
     </div>
 

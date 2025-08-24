@@ -1744,7 +1744,12 @@ class TwoWheelBotRL {
         }
         
         // Use optimized steps for all modes except when explicitly paused
-        const stepsToRun = this.isPaused ? 1 : maxStepsPerFrame;
+        const stepsToRun = this.isPaused ? 0 : maxStepsPerFrame;
+        
+        // If paused, skip all physics processing
+        if (this.isPaused) {
+            return;
+        }
         
         // Profiling variables
         let robotStepTime = 0;
@@ -1937,6 +1942,17 @@ class TwoWheelBotRL {
             const isOffScreen = bounds && (robotState.position < bounds.minX || robotState.position > bounds.maxX);
             const hasFallen = result.done; // Robot fell over (angle too large)
             
+            // Debug logging for bounds detection - Enhanced for free run debugging
+            if (this.demoMode === 'freerun' && bounds) {
+                // Always log in free run mode when robot is moving significantly
+                if (Math.abs(robotState.position) > 0.5) {
+                    console.log(`Free Run Debug: pos=${robotState.position.toFixed(2)}m, bounds=[${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}], isOffScreen=${isOffScreen}, autoReset=${this.autoResetEnabled}, scheduled=${this.autoResetScheduled}`);
+                }
+            } else if (bounds && Math.abs(robotState.position) > 1.0) {
+                // Regular debug logging for other modes
+                console.log(`Debug: Robot position=${robotState.position.toFixed(2)}m, bounds=[${bounds.minX.toFixed(2)}, ${bounds.maxX.toFixed(2)}], isOffScreen=${isOffScreen}, mode=${this.demoMode}, autoReset=${this.autoResetEnabled}`);
+            }
+            
             if (isOffScreen || hasFallen) {
                 // Handle based on mode
                 if ((this.demoMode === 'training') && !this.episodeEnded && this.isTraining) {
@@ -1956,23 +1972,78 @@ class TwoWheelBotRL {
                     break; // Exit the physics loop immediately
                 } else if (this.demoMode === 'freerun' && this.autoResetEnabled) {
                     // Auto-reset robot in free run mode if enabled (with 1-second delay)
+                    console.log(`Free Run Reset Trigger: isOffScreen=${isOffScreen}, hasFallen=${hasFallen}, scheduled=${this.autoResetScheduled}, mode=${this.demoMode}, autoReset=${this.autoResetEnabled}`);
+                    
                     if (!this.autoResetScheduled) {
                         this.autoResetScheduled = true;
+                        
+                        // Pause simulation immediately to prevent further movement
+                        this.isPaused = true;
+                        
+                        // Reset performance timing to prevent slowdown
+                        this.lastFrameTime = 0;
+                        this.lastPhysicsUpdate = 0;
+                        this.frameTimeHistory = [];
+                        
                         if (isOffScreen) {
-                            console.log(`Robot moved off canvas in free run mode, auto-resetting in 1 second...`);
+                            console.log(`Robot moved off canvas in free run mode (pos=${robotState.position.toFixed(2)}m), pausing and auto-resetting in 1 second...`);
                         } else if (hasFallen) {
-                            console.log(`Robot fell over in free run mode (angle=${robotState.angle.toFixed(2)} rad), auto-resetting in 1 second...`);
+                            console.log(`Robot fell over in free run mode (angle=${robotState.angle.toFixed(2)} rad), pausing and auto-resetting in 1 second...`);
                         }
                         
                         // Schedule reset after 1 second delay
                         setTimeout(() => {
+                            console.log(`Auto-reset timeout triggered: mode=${this.demoMode}, autoReset=${this.autoResetEnabled}, scheduled=${this.autoResetScheduled}`);
                             if (this.demoMode === 'freerun' && this.autoResetEnabled) {
                                 console.log('Auto-resetting now...');
-                                this.resetRobotPosition(); // Use the existing reset function which handles reset angle
+                                
+                                // Reset robot position
+                                let resetAngle = 0;
+                                if (this.demoMode === 'freerun' && Math.abs(this.resetAngleDegrees) > 0) {
+                                    const angleDegrees = this.resetAngleDegrees || 0.0;
+                                    resetAngle = angleDegrees * Math.PI / 180;
+                                }
+                                
+                                this.robot.reset({
+                                    angle: resetAngle,
+                                    angularVelocity: 0,
+                                    position: 0,
+                                    velocity: 0
+                                });
+                                
+                                // Resume simulation after reset
+                                this.isPaused = false;
                                 this.autoResetScheduled = false;
+                                
+                                console.log('Auto-reset completed - simulation resumed');
+                            } else {
+                                console.log(`Auto-reset skipped: mode=${this.demoMode}, autoReset=${this.autoResetEnabled}`);
+                                this.autoResetScheduled = false; // Clear flag even if we don't reset
                             }
                         }, 1000);
+                        
+                        break; // Exit the physics loop immediately after scheduling reset
+                    } else {
+                        console.log('Auto-reset already scheduled, skipping...');
                     }
+                } else if (this.demoMode === 'freerun') {
+                    // Stop simulation when robot goes off-screen or falls in free run mode (no auto-reset)
+                    if (isOffScreen) {
+                        console.log(`Robot moved off canvas in free run mode (pos=${robotState.position.toFixed(2)}m), stopping simulation...`);
+                    } else if (hasFallen) {
+                        console.log(`Robot fell over in free run mode (angle=${robotState.angle.toFixed(2)} rad), stopping simulation...`);
+                    }
+                    
+                    // Stop the simulation by pausing it
+                    this.isPaused = true;
+                    
+                    // Reset performance timing to prevent slowdown when resuming
+                    this.lastFrameTime = 0;
+                    this.lastPhysicsUpdate = 0;
+                    this.frameTimeHistory = [];
+                    
+                    console.log('Simulation stopped - performance timing reset');
+                    break; // Exit the physics loop immediately
                 } else if (this.demoMode === 'manual' || this.demoMode === 'physics') {
                     // Reset robot to origin for manual/physics modes
                     if (isOffScreen) {
@@ -3550,6 +3621,18 @@ class TwoWheelBotRL {
             // Clear any pending auto-reset timeout
             this.autoResetScheduled = false;
             
+            // Reset performance timing to prevent simulation slowdown
+            this.lastFrameTime = 0;
+            this.lastPhysicsUpdate = 0;
+            this.frameTimeHistory = [];
+            
+            // Only resume simulation in free run mode (for manual resets)
+            // Auto-reset in training mode should not unpause
+            if (this.demoMode === 'freerun') {
+                this.isPaused = false;
+                console.log('Simulation resumed after manual reset');
+            }
+            
             let resetAngle = 0; // Default: perfectly balanced
             
             // In free run mode, use exact angle from slider
@@ -3565,7 +3648,7 @@ class TwoWheelBotRL {
                 position: 0,
                 velocity: 0
             });
-            console.log('Robot position reset');
+            console.log('Robot position reset - performance timing reset');
         }
     }
     
