@@ -1445,7 +1445,7 @@ class TwoWheelBotRL {
         this.isPaused = !this.isPaused;
         
         const pauseButton = document.getElementById('pause-training');
-        pauseButton.textContent = this.isPaused ? 'Resume Training' : 'Pause Training';
+        pauseButton.textContent = this.isPaused ? 'Continue Training' : 'Pause Training';
         
         // Update model display to show paused/training status
         this.updateTrainingModelDisplay();
