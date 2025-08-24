@@ -887,7 +887,7 @@ class TwoWheelBotRL {
         this.parallelModeEnabled = false; // Track if parallel training is manually enabled
         
         // Free run mode settings
-        this.resetAngleDegrees = 0.0; // Default reset angle in degrees
+        this.resetAngleDegrees = 1.0; // Default reset angle in degrees
         this.maxOffsetRangeDegrees = 5.0; // Default max offset range for training
         
         // Debug control speed
@@ -927,7 +927,7 @@ class TwoWheelBotRL {
         this.hasEverTrained = false;
         
         // Auto-reset toggle for free run mode
-        this.autoResetEnabled = false; // Auto reset when robot goes off screen in free run mode (disabled by default)
+        this.autoResetEnabled = true; // Auto reset when robot goes off screen in free run mode (enabled by default)
         this.autoResetScheduled = false; // Flag to prevent multiple auto-reset timeouts
         
         // User control toggle state (separate from manual mode)
@@ -1461,7 +1461,7 @@ class TwoWheelBotRL {
         this.demoMode = 'freerun'; // Reset to free run mode
         this.modelControlEnabled = false; // Reset to manual control only
         this.pdControlEnabled = false; // Reset to manual control only
-        this.autoResetEnabled = false; // Reset auto-reset to disabled
+        this.autoResetEnabled = true; // Reset auto-reset to enabled (default)
         
         // Legacy compatibility during transition
         this.pdControllerEnabled = false;
