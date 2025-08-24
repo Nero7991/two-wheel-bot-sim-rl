@@ -3461,12 +3461,12 @@ class TwoWheelBotRL {
             this.manualControl.manualTorque = 0;
             this.debugLastAction = 'Left+Right (Cancel)';
         } else if (this.manualControl.leftPressed) {
-            // Left pressed - negative torque (move left)
-            this.manualControl.manualTorque = -maxTorque * 0.7;
+            // Left pressed - negative torque (move left) - reduced sensitivity
+            this.manualControl.manualTorque = -maxTorque * 0.3;
             this.debugLastAction = 'Left';
         } else if (this.manualControl.rightPressed) {
-            // Right pressed - positive torque (move right)  
-            this.manualControl.manualTorque = maxTorque * 0.7;
+            // Right pressed - positive torque (move right) - reduced sensitivity  
+            this.manualControl.manualTorque = maxTorque * 0.3;
             this.debugLastAction = 'Right';
         } else {
             // No keys pressed
