@@ -100,7 +100,14 @@ class UIControls {
             trainingSpeedSlider.addEventListener('input', (e) => {
                 const value = parseFloat(e.target.value);
                 this.setParameter('trainingSpeed', value);
-                this.app.setTrainingSpeed(value);
+                
+                // Don't override max speed mode when slider changes
+                if (!this.maxSpeedEnabled) {
+                    this.app.setTrainingSpeed(value);
+                } else {
+                    // Keep max speed enabled even if slider changes
+                    console.log('Slider changed but maintaining max speed mode');
+                }
             });
         }
         
@@ -122,11 +129,24 @@ class UIControls {
             }
         });
         
+        // Max speed button
+        const maxButton = document.getElementById('speed-max');
+        if (maxButton) {
+            maxButton.addEventListener('click', () => {
+                this.enableMaxSpeed();
+            });
+        }
+        
         // Parallel training button
         const parallelButton = document.getElementById('speed-parallel');
         if (parallelButton) {
             parallelButton.addEventListener('click', () => {
-                this.enableParallelTraining();
+                // Only enable if button is not disabled
+                if (!parallelButton.disabled) {
+                    this.enableParallelTraining();
+                } else {
+                    console.log('⚠️  Parallel training is not available - button disabled');
+                }
             });
         }
         
@@ -699,6 +719,15 @@ class UIControls {
             if (saved) {
                 const loadedParams = JSON.parse(saved);
                 this.parameters = { ...this.parameters, ...loadedParams };
+                
+                // Reset epsilon to its intended starting value (0.9) if it was saved as a decayed value
+                // This prevents epsilon from being stuck at a low value (like 0.01) on page reload
+                // when epsilon decay is enabled
+                if (this.parameters.epsilon < 0.5) {
+                    this.parameters.epsilon = 0.9;
+                    console.log('Reset epsilon from saved decayed value to starting value (0.9)');
+                }
+                
                 console.log('Parameters loaded from localStorage');
             }
         } catch (error) {
@@ -712,14 +741,39 @@ class UIControls {
         document.getElementById('training-speed-value').textContent = `${speed.toFixed(1)}x`;
         this.app.setTrainingSpeed(speed);
         this.parallelModeEnabled = false; // Disable parallel mode when setting speed preset
+        this.maxSpeedEnabled = false; // Disable max speed mode when setting speed preset
         this.app.setParallelMode(false);
+        this.app.setMaxSpeedMode(false);
         console.log(`Speed preset set to ${speed}x`);
+    }
+    
+    enableMaxSpeed() {
+        this.maxSpeedEnabled = true;
+        this.parallelModeEnabled = false; // Disable parallel mode when max speed is enabled
+        document.getElementById('training-speed-value').textContent = 'Max';
+        
+        // Set max speed mode first, then update slider (to avoid slider event overriding max speed)
+        this.app.setMaxSpeedMode(true);
+        this.app.setParallelMode(false);
+        
+        // Set slider to max position after enabling max speed mode
+        document.getElementById('training-speed').value = 50; // Set slider to max position (slider max is 50)
+        
+        console.log('🚀 Max speed mode enabled - removing all throttling!');
+        
+        // If currently training, switch to max speed immediately
+        if (this.app.isTraining) {
+            console.log('Switching current training to max speed mode');
+            this.app.trainingSpeed = Infinity; // Remove all speed limits
+        }
     }
     
     enableParallelTraining() {
         this.parallelModeEnabled = true;
+        this.maxSpeedEnabled = false; // Disable max speed when parallel is enabled
         document.getElementById('training-speed-value').textContent = 'Parallel Mode';
         this.app.setParallelMode(true);
+        this.app.setMaxSpeedMode(false);
         console.log('Parallel training mode enabled');
         
         // If currently training, switch to parallel immediately
@@ -866,10 +920,10 @@ class TwoWheelBotRL {
         
         // Performance tracking
         this.performanceTracker = new TrainingPerformanceTracker();
-        this.smartRenderingManager = new SmartRenderingManager(this.performanceTracker, {
-            targetFPS: 60,
-            mode: 'interval' // Use setInterval for consistent 60 FPS
-        });
+        // this.smartRenderingManager = new SmartRenderingManager(this.performanceTracker, {
+        //     targetFPS: 60,
+        //     mode: 'interval' // Use setInterval for consistent 60 FPS
+        // }); // Not used - commented out temporarily
         
         // Application state with debugging
         this._isTraining = false;
@@ -988,8 +1042,18 @@ class TwoWheelBotRL {
             this.uiControls.initialize();
             
             // Initialize parallel training system
-            this.systemCapabilities = new SystemCapabilities();
-            console.log(`System capabilities: ${this.systemCapabilities.coreCount} cores, using ${this.systemCapabilities.maxWorkers} workers`);
+            try {
+                this.systemCapabilities = new SystemCapabilities();
+                console.log(`System capabilities: ${this.systemCapabilities.coreCount} cores, using ${this.systemCapabilities.maxWorkers} workers`);
+            } catch (error) {
+                console.error('Failed to initialize SystemCapabilities:', error);
+                // Create a fallback minimal system capabilities
+                this.systemCapabilities = {
+                    coreCount: navigator.hardwareConcurrency || 2,
+                    maxWorkers: Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) * 0.5))
+                };
+                console.log(`Using fallback system capabilities: ${this.systemCapabilities.coreCount} cores, ${this.systemCapabilities.maxWorkers} workers`);
+            }
             
             // Update WebGPU status display
             this.updateWebGPUStatusDisplay();
@@ -1009,6 +1073,9 @@ class TwoWheelBotRL {
             
             this.isInitialized = true;
             console.log('Application initialized successfully!');
+            
+            // Check and update parallel button state after full initialization
+            await this.updateParallelButtonState();
             
         } catch (error) {
             console.error('Failed to initialize application:', error);
@@ -1137,9 +1204,14 @@ class TwoWheelBotRL {
         });
         
         // Add epsilon decay checkbox handler
-        document.getElementById('epsilon-decay-enabled').addEventListener('change', (e) => {
+        const epsilonDecayCheckbox = document.getElementById('epsilon-decay-enabled');
+        // Initialize from checkbox state on page load
+        this.epsilonDecayEnabled = epsilonDecayCheckbox.checked;
+        console.log('Initial epsilon decay enabled:', this.epsilonDecayEnabled);
+        
+        epsilonDecayCheckbox.addEventListener('change', (e) => {
             this.epsilonDecayEnabled = e.target.checked;
-            console.log('Epsilon decay enabled:', this.epsilonDecayEnabled);
+            console.log('Epsilon decay enabled changed:', this.epsilonDecayEnabled);
         });
         
         // Visualization controls
@@ -1310,14 +1382,14 @@ class TwoWheelBotRL {
                 const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
                 this.qlearning.hyperparams.epsilon = epsilonMin;
                 console.log(`Epsilon decay disabled - using epsilon minimum (${epsilonMin})`);
-            } else if (hasPreTrainedModel) {
-                // If decay is enabled but we have a pre-trained model, use epsilon minimum to preserve behavior
-                const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
-                this.qlearning.hyperparams.epsilon = epsilonMin;
-                console.log(`Pre-trained model with decay enabled - using epsilon minimum (${epsilonMin}) to preserve learned behavior`);
             } else {
-                // Fresh model with decay enabled - use epsilon from UI slider for exploration
-                console.log(`Fresh model with epsilon decay enabled - using epsilon from UI slider (${this.qlearning.hyperparams.epsilon}) for exploration`);
+                // Epsilon decay is enabled - use epsilon from UI slider for exploration
+                // Reset initialEpsilon to allow fresh decay from slider value
+                this.qlearning.initialEpsilon = null;
+                
+                const currentEpsilon = this.uiControls ? this.uiControls.getParameter('epsilon') : 0.9;
+                this.qlearning.hyperparams.epsilon = currentEpsilon;
+                console.log(`Epsilon decay enabled - starting with epsilon from UI slider (${currentEpsilon}) for exploration`);
             }
         }
         
@@ -1604,8 +1676,8 @@ class TwoWheelBotRL {
         // Start the renderer
         this.renderer.start();
         
-        // Choose simulation mode based on SmartRenderingManager configuration
-        if (this.smartRenderingManager.renderingMode === 'interval') {
+        // Choose simulation mode based on training speed (SmartRenderingManager not used)
+        if (this.maxSpeedModeEnabled || this.trainingSpeed >= 10) {
             this.startHighPerformanceSimulation();
         } else {
             this.startDisplaySyncedSimulation();
@@ -1638,11 +1710,14 @@ class TwoWheelBotRL {
     
     startHighPerformanceSimulation() {
         // Adaptive high-performance simulation based on training speed
-        const baseTargetInterval = 1000 / this.smartRenderingManager.actualTargetFPS; // 8.33ms for 120 FPS
+        const baseTargetInterval = 1000 / 120; // 8.33ms for 120 FPS (SmartRenderingManager not used)
         
         // Adjust interval based on training speed - REMOVE throttling for max performance
         let adaptedInterval;
-        if (this.trainingSpeed <= 20) {
+        if (this.maxSpeedModeEnabled || this.trainingSpeed === Infinity) {
+            // Max speed mode: run as fast as possible with minimal interval
+            adaptedInterval = 0; // 0ms = unlimited speed
+        } else if (this.trainingSpeed <= 20) {
             adaptedInterval = baseTargetInterval; // Full 120 FPS for low speeds
         } else if (this.trainingSpeed <= 100) {
             adaptedInterval = baseTargetInterval; // Keep 120 FPS for medium speeds too
@@ -1695,11 +1770,11 @@ class TwoWheelBotRL {
             // Auto-adjust training speed if performance is extremely poor (disabled for manual speed control)
             if (this.frameTimeHistory.length === this.performanceCheckInterval) {
                 const avgFrameTime = this.frameTimeHistory.reduce((a, b) => a + b) / this.frameTimeHistory.length;
-                const targetFrameTime = 1000 / this.smartRenderingManager.actualTargetFPS;
+                const targetFrameTime = 1000 / 120; // 120 FPS target (SmartRenderingManager not used)
                 
                 // Only auto-adjust if frame time is catastrophically poor (>200ms = <5 FPS)
                 // and we're running an extreme number of physics steps, and rendering is active
-                const isRenderingActive = this.smartRenderingManager.shouldRenderFrame(this.trainingSpeed);
+                const isRenderingActive = true; // Always consider rendering active (SmartRenderingManager not used)
                 if (avgFrameTime > 200 && this.targetPhysicsStepsPerFrame > 500 && isRenderingActive) {
                     this.setTrainingSpeed(Math.max(50.0, this.trainingSpeed * 0.8));
                     console.warn(`Catastrophic performance (${avgFrameTime.toFixed(1)}ms/frame), reducing training speed to ${this.trainingSpeed.toFixed(1)}x`);
@@ -1715,8 +1790,8 @@ class TwoWheelBotRL {
             // debugSpeed ranges from 0.1x to 2x, so adjust interval accordingly
             // Base interval is 16.67ms (60fps), adjust inversely with speed
             updateInterval = Math.max(1, 16.67 / this.debugSpeed);
-        } else if (this.demoMode === 'training' && (this.parallelModeEnabled || this.trainingSpeed > 100)) {
-            // For parallel mode or high-speed training, run physics as fast as possible
+        } else if (this.demoMode === 'training' && (this.maxSpeedModeEnabled || this.parallelModeEnabled || this.trainingSpeed > 100)) {
+            // For max speed, parallel mode or high-speed training, run physics as fast as possible
             updateInterval = 0; // No throttling - run every frame
         } else {
             // Normal throttling for low/medium speeds in training mode only
@@ -1726,12 +1801,18 @@ class TwoWheelBotRL {
         if (timestamp - this.lastPhysicsUpdate >= updateInterval) {
             await this.updatePhysics();
             
-            // Smart rendering - skip rendering during high-speed training or parallel mode
-            const effectiveSpeed = this.parallelModeEnabled ? 1000 : this.trainingSpeed;
-            const shouldRender = this.smartRenderingManager.shouldRenderFrame(effectiveSpeed);
+            // Smart rendering - skip visual rendering during max speed, but always update UI statistics
+            const effectiveSpeed = this.maxSpeedModeEnabled ? 10000 : (this.parallelModeEnabled ? 1000 : this.trainingSpeed);
+            const shouldRender = effectiveSpeed <= 100; // Simple rendering logic: skip at very high speeds (SmartRenderingManager not used)
+            
             if (shouldRender) {
                 this.updateRenderer();
+            }
+            
+            // Always update UI statistics, but throttle during max speed to avoid performance impact
+            if (shouldRender || (timestamp - (this.lastUIUpdate || 0)) > 250) { // Update UI at least every 250ms during max speed
                 this.updateUI();
+                this.lastUIUpdate = timestamp;
             }
             
             this.lastPhysicsUpdate = timestamp;
@@ -1753,6 +1834,9 @@ class TwoWheelBotRL {
             const baseSteps = Math.max(1, Math.round(this.debugSpeed * 3)); // 1-6 steps based on speed
             // Ensure at least as many steps as history timesteps for smooth operation
             maxStepsPerFrame = Math.max(baseSteps, historyTimesteps);
+        } else if (this.maxSpeedModeEnabled || this.trainingSpeed === Infinity) {
+            // Max speed mode: run as many steps as possible without any throttling
+            maxStepsPerFrame = 10000; // Effectively unlimited for single frame
         } else if (this.parallelModeEnabled) {
             // Parallel mode: main thread runs at maximum speed regardless of slider
             maxStepsPerFrame = 1000; // Max speed for parallel training
@@ -2161,6 +2245,11 @@ class TwoWheelBotRL {
         
         // Performance charts are updated only on episode completion in handleEpisodeEnd()
         
+        // Update CPU-bound indicator periodically
+        if (this.isTraining && this.episodeCount > 0) {
+            this.updateCPUBoundIndicator();
+        }
+        
         // Update backend performance info
         this.updateBackendPerformanceDisplay();
     }
@@ -2512,11 +2601,20 @@ class TwoWheelBotRL {
         
         // Initialize parallel training wrapper
         if (this.systemCapabilities && this.systemCapabilities.maxWorkers > 1) {
-            this.parallelQLearning = new ParallelQLearning(this.qlearning, this.robot);
-            await this.parallelQLearning.initialize();
-            console.log(`Parallel training initialized with ${this.systemCapabilities.maxWorkers} workers`);
+            try {
+                this.parallelQLearning = new ParallelQLearning(this.qlearning, this.robot);
+                await this.parallelQLearning.initialize();
+                console.log(`✅ Parallel training initialized with ${this.systemCapabilities.maxWorkers} workers`);
+                this.enableParallelButton();
+            } catch (error) {
+                console.log('❌ Parallel training initialization failed:', error.message);
+                console.log('⚠️  Parallel button will be disabled');
+                this.parallelQLearning = null;
+                this.disableParallelButton();
+            }
         } else {
             console.log('Parallel training disabled (insufficient cores)');
+            this.disableParallelButton();
         }
         
         // Log backend information
@@ -2755,8 +2853,10 @@ class TwoWheelBotRL {
                     
                     console.log(`  Episode ${this.episodeCount}: reward=${episodeReward.toFixed(2)}, steps=${episodeSteps}, experiences=${result.experiences?.length || 0}`);
                     
-                    // Small delay between individual episode updates to make charts visible
-                    await new Promise(resolve => setTimeout(resolve, 2));
+                    // Small delay between individual episode updates to make charts visible (skip in max speed mode)
+                    if (!this.maxSpeedModeEnabled) {
+                        await new Promise(resolve => setTimeout(resolve, 2));
+                    }
                 }
             }
             
@@ -3102,7 +3202,7 @@ class TwoWheelBotRL {
         console.log(`Training speed set to ${speed}x (${this.targetPhysicsStepsPerFrame} steps/frame)`);
         
         // CRITICAL FIX: Restart simulation with adapted interval for the new speed
-        if (this.isInitialized && this.smartRenderingManager.renderingMode === 'interval') {
+        if (this.isInitialized && (this.maxSpeedModeEnabled || this.trainingSpeed >= 10)) {
             console.log('Restarting simulation with adapted interval for new speed...');
             this.startSimulation(); // This will call stopSimulation() and restart with correct interval
         }
@@ -3116,6 +3216,140 @@ class TwoWheelBotRL {
     setParallelMode(enabled) {
         this.parallelModeEnabled = enabled;
         console.log(`Parallel training mode ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    setMaxSpeedMode(enabled) {
+        this.maxSpeedModeEnabled = enabled;
+        if (enabled) {
+            this.trainingSpeed = Infinity; // Remove all speed limits
+            console.log('🚀 Max speed mode enabled - training at maximum possible speed!');
+        } else {
+            // Restore previous training speed if it was Infinity
+            if (this.trainingSpeed === Infinity) {
+                this.trainingSpeed = 1.0;
+            }
+            console.log('Max speed mode disabled');
+        }
+    }
+
+    /**
+     * Enable the parallel button when parallel training is available
+     */
+    enableParallelButton() {
+        const parallelButton = document.getElementById('speed-parallel');
+        if (parallelButton) {
+            parallelButton.disabled = false;
+            parallelButton.style.opacity = '1';
+            parallelButton.style.cursor = 'pointer';
+            parallelButton.title = 'Use Parallel button for multi-core training';
+            console.log('✅ Parallel button enabled - parallel training available');
+        }
+    }
+
+    /**
+     * Disable the parallel button when parallel training is not available
+     */
+    disableParallelButton() {
+        const parallelButton = document.getElementById('speed-parallel');
+        if (parallelButton) {
+            parallelButton.disabled = true;
+            parallelButton.style.opacity = '0.5';
+            parallelButton.style.cursor = 'not-allowed';
+            parallelButton.title = 'Parallel training not available (insufficient cores or worker loading failed)';
+            console.log('❌ Parallel button disabled - parallel training not available');
+        }
+    }
+
+    /**
+     * Update parallel button state based on availability
+     */
+    async updateParallelButtonState() {
+        console.log('🔍 Checking parallel training availability...');
+        
+        // Check if system supports parallel training (multiple cores)
+        const hasSystemCapabilities = this.systemCapabilities && this.systemCapabilities.maxWorkers > 1;
+        
+        console.log('- System capabilities:', !!this.systemCapabilities);
+        console.log('- Max workers:', this.systemCapabilities?.maxWorkers);
+        
+        if (!hasSystemCapabilities) {
+            this.disableParallelButton();
+            console.log('❌ Parallel button disabled - insufficient cores');
+            return;
+        }
+        
+        // Test if workers can actually be loaded (to prevent fake simulation)
+        try {
+            console.log('🔍 Testing Web Worker availability...');
+            const { ParallelQLearning } = await import('./training/ParallelTraining.js');
+            const testQLearning = { hyperparams: { hiddenSize: 8 } }; // Minimal test object
+            const testRobot = { getConfig: () => ({ timesteps: 1 }) }; // Minimal test object
+            
+            const testParallel = new ParallelQLearning(testQLearning, testRobot);
+            await testParallel.initialize();
+            
+            // If we got here, workers loaded successfully
+            testParallel.cleanup(); // Clean up test instance
+            this.enableParallelButton();
+            console.log('✅ Parallel button enabled - Web Workers available');
+        } catch (error) {
+            console.log('❌ Parallel button disabled - Web Workers not available:', error.message);
+            this.disableParallelButton();
+        }
+    }
+
+    /**
+     * Update CPU-bound indicator based on actual vs expected training speed
+     */
+    updateCPUBoundIndicator() {
+        if (!this.isTraining || !this.performanceTracker) return;
+        
+        // Get actual steps per second from performance tracker
+        const stats = this.performanceTracker.getPerformanceStats();
+        const actualSPS = stats.stepsPerSecond || 0;
+        
+        // Estimate expected steps/sec based on training speed setting
+        const targetSpeed = this.maxSpeedModeEnabled ? Infinity : 
+                          (this.parallelModeEnabled ? 1000 : this.trainingSpeed);
+        
+        // For speeds above 10x, we expect linear scaling up to around 50x
+        // Above 50x, we expect diminishing returns due to CPU limits
+        // Baseline: ~50 steps/sec at 1x speed (physics timestep = 20ms = 50Hz)
+        let expectedSPS;
+        if (targetSpeed === Infinity) {
+            expectedSPS = 5000; // Max theoretical steps/sec
+        } else if (targetSpeed <= 10) {
+            expectedSPS = targetSpeed * 50; // ~50 steps/sec at 1x speed
+        } else if (targetSpeed <= 50) {
+            expectedSPS = 500 + (targetSpeed - 10) * 40; // Linear scaling
+        } else {
+            expectedSPS = 2100 + (targetSpeed - 50) * 20; // Diminishing returns
+        }
+        
+        // Check if we're CPU-bound (actual speed is significantly less than expected)
+        const isCPUBound = actualSPS > 0 && actualSPS < expectedSPS * 0.7; // 70% threshold
+        
+        // Update UI elements
+        const cpuIndicator = document.getElementById('cpu-bound-indicator');
+        const actualSpeedDisplay = document.getElementById('actual-speed-display');
+        const actualSpeedValue = document.getElementById('actual-speed-value');
+        
+        if (cpuIndicator) {
+            cpuIndicator.style.display = isCPUBound ? 'inline' : 'none';
+        }
+        
+        if (actualSpeedDisplay && actualSPS > 0) {
+            actualSpeedDisplay.style.display = 'block';
+            actualSpeedValue.textContent = `${actualSPS.toFixed(0)}`;
+            
+            // Color code based on CPU-bound status
+            actualSpeedDisplay.style.color = isCPUBound ? '#ff9900' : '#00d4ff';
+        }
+        
+        // Log CPU-bound status periodically for debugging
+        if (this.episodeCount % 20 === 0 && isCPUBound) {
+            console.log(`⚠️ CPU-bound: ${actualEPM.toFixed(0)} eps/min (expected: ${expectedEPM.toFixed(0)}+)`);
+        }
     }
     
     testModel() {
@@ -4120,12 +4354,22 @@ class TwoWheelBotRL {
         this.episodeCount = saveData.episodesTrained || 0;
         this.bestScore = saveData.bestScore || 0;
         
-        // For loaded pre-trained models, set epsilon to minimum to preserve learned behavior
+        // For loaded pre-trained models, handle epsilon based on decay setting
         if (this.episodeCount > 0 && this.qlearning) {
             this.hasEverTrained = true; // Mark that this is a trained model
-            const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
-            this.qlearning.hyperparams.epsilon = epsilonMin;
-            console.log(`Loaded pre-trained model with ${this.episodeCount} episodes - set epsilon to minimum (${epsilonMin}) to preserve learned behavior`);
+            
+            if (!this.epsilonDecayEnabled) {
+                // If decay disabled, use epsilon minimum
+                const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
+                this.qlearning.hyperparams.epsilon = epsilonMin;
+                console.log(`Loaded pre-trained model - epsilon decay disabled, using epsilon minimum (${epsilonMin})`);
+            } else {
+                // If decay enabled, use epsilon from UI for continued exploration
+                const currentEpsilon = this.uiControls ? this.uiControls.getParameter('epsilon') : 0.9;
+                this.qlearning.hyperparams.epsilon = currentEpsilon;
+                this.qlearning.initialEpsilon = null; // Reset for fresh decay
+                console.log(`Loaded pre-trained model - epsilon decay enabled, starting from UI epsilon (${currentEpsilon}) for continued exploration`);
+            }
         }
         
         // Set current model name and clear unsaved flag
@@ -4344,12 +4588,22 @@ class TwoWheelBotRL {
         // Update target network to match
         this.qlearning.targetNetwork = this.qlearning.qNetwork.clone();
         
-        // For imported pre-trained models, set epsilon to minimum to preserve learned behavior
+        // For imported pre-trained models, handle epsilon based on decay setting
         if (this.qlearning) {
             this.hasEverTrained = true; // Mark that this is a trained model
-            const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
-            this.qlearning.hyperparams.epsilon = epsilonMin;
-            console.log(`Imported pre-trained model - set epsilon to minimum (${epsilonMin}) to preserve learned behavior`);
+            
+            if (!this.epsilonDecayEnabled) {
+                // If decay disabled, use epsilon minimum
+                const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
+                this.qlearning.hyperparams.epsilon = epsilonMin;
+                console.log(`Imported pre-trained model - epsilon decay disabled, using epsilon minimum (${epsilonMin})`);
+            } else {
+                // If decay enabled, use epsilon from UI for continued exploration
+                const currentEpsilon = this.uiControls ? this.uiControls.getParameter('epsilon') : 0.9;
+                this.qlearning.hyperparams.epsilon = currentEpsilon;
+                this.qlearning.initialEpsilon = null; // Reset for fresh decay
+                console.log(`Imported pre-trained model - epsilon decay enabled, starting from UI epsilon (${currentEpsilon}) for continued exploration`);
+            }
         }
         
         // Reset training state for imported model

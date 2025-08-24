@@ -288,25 +288,69 @@ export class ParallelTrainingManager {
      */
     async createWorkerScript() {
         try {
-            // Fetch the episode worker script
-            console.log('🔍 Attempting to load EpisodeWorker.js...');
-            const workerResponse = await fetch('./src/training/EpisodeWorker.js');
+            // Try multiple paths to find EpisodeWorker.js
+            const baseUrl = window.location.origin;
+            const possiblePaths = [
+                './src/training/EpisodeWorker.js',
+                '/src/training/EpisodeWorker.js',
+                `${baseUrl}/src/training/EpisodeWorker.js`,
+                // For Vite dev server
+                `${baseUrl}/@fs${window.location.pathname.replace(/\/[^\/]*$/, '')}/src/training/EpisodeWorker.js`,
+                // Direct file path resolution
+                new URL('EpisodeWorker.js', window.location.href.replace(/\/[^\/]*$/, '/src/training/')).href
+            ];
             
-            if (!workerResponse.ok) {
-                throw new Error(`Failed to fetch EpisodeWorker.js: ${workerResponse.status}`);
+            console.log('🔍 Base URL:', baseUrl);
+            console.log('🔍 Current location:', window.location.href);
+            
+            let workerCode = null;
+            let successfulPath = null;
+            
+            for (const path of possiblePaths) {
+                try {
+                    console.log(`🔍 Attempting to load EpisodeWorker.js from: ${path}`);
+                    const workerResponse = await fetch(path);
+                    
+                    if (workerResponse.ok) {
+                        const responseText = await workerResponse.text();
+                        
+                        // Check if we got an HTML error page instead of JavaScript
+                        if (responseText.trim().startsWith('<')) {
+                            console.log(`❌ Got HTML instead of JavaScript from ${path} (probably 404)`);
+                            continue;
+                        }
+                        
+                        // Check if the content looks like JavaScript
+                        if (!responseText.includes('onmessage') && !responseText.includes('postMessage')) {
+                            console.log(`❌ Content from ${path} doesn't look like a worker script`);
+                            continue;
+                        }
+                        
+                        workerCode = responseText;
+                        successfulPath = path;
+                        console.log(`✅ EpisodeWorker.js loaded successfully from ${path} (${workerCode.length} chars)`);
+                        break;
+                    } else {
+                        console.log(`❌ Failed to fetch from ${path}: ${workerResponse.status}`);
+                    }
+                } catch (error) {
+                    console.log(`❌ Error fetching from ${path}: ${error.message}`);
+                }
             }
             
-            const workerCode = await workerResponse.text();
-            console.log(`✅ EpisodeWorker.js loaded successfully (${workerCode.length} chars)`);
-            
-            // Create blob URL for the worker
-            const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
-            return URL.createObjectURL(workerBlob);
+            if (workerCode) {
+                // Create blob URL for the worker
+                const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+                return URL.createObjectURL(workerBlob);
+            } else {
+                throw new Error('Failed to load EpisodeWorker.js from any path');
+            }
             
         } catch (error) {
-            console.warn('❌ Failed to load EpisodeWorker.js, using fallback simulation:', error.message);
-            // Fallback to inline worker if file loading fails
-            return this.createFallbackWorkerScript();
+            console.warn('❌ Failed to load EpisodeWorker.js, parallel training will be disabled:', error.message);
+            console.warn('⚠️  Parallel training requires the real EpisodeWorker.js file to function properly');
+            // Don't use fallback - just throw to disable parallel training
+            throw new Error('EpisodeWorker.js could not be loaded - parallel training disabled');
         }
     }
     

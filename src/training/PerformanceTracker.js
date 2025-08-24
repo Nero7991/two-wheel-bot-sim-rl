@@ -128,12 +128,21 @@ export class TrainingPerformanceTracker {
             this.currentEpisodesPerMinute = timeSpan > 0 ? recentEpisodes.length / timeSpan : 0;
         }
         
-        // Calculate steps per second
-        const recentSteps = this.stepTimes.filter(step => step > windowStart);
-        if (recentSteps.length > 0) {
-            const minStepTime = Math.min.apply(Math, recentSteps);
-            const timeSpan = (now - minStepTime) / 1000; // seconds
-            this.currentStepsPerSecond = timeSpan > 0 ? recentSteps.length / timeSpan : 0;
+        // Calculate steps per second based on episode execution time (excluding episode overhead)
+        if (recentEpisodes.length > 0) {
+            // Use only the last 4 episodes for faster response to speed changes
+            const last4Episodes = recentEpisodes.slice(-4);
+            
+            // Calculate steps/sec for each episode, then use rolling average
+            const episodeRates = last4Episodes.map(ep => {
+                // steps/sec = steps / (episode_duration_in_seconds)
+                const durationSeconds = ep.duration / 1000;
+                return durationSeconds > 0 ? ep.steps / durationSeconds : 0;
+            });
+            
+            // Use rolling average of last 4 episode rates for faster response
+            this.currentStepsPerSecond = episodeRates.length > 0 ? 
+                episodeRates.reduce((sum, rate) => sum + rate, 0) / episodeRates.length : 0;
         }
         
         // Calculate training efficiency

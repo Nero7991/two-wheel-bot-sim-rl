@@ -264,6 +264,9 @@ export class QLearning {
         this.consecutiveMaxEpisodes = 0; // Track consecutive episodes that reach max steps
         this.trainingCompleted = false;
         
+        // Epsilon decay control - initialized to true by default
+        this.epsilonDecayEnabled = true;
+        
         // Action space (discrete actions for continuous control)
         this.actions = [-1.0, 0.0, 1.0]; // Left motor, brake, right motor
         this.numActions = this.actions.length;

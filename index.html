@@ -1293,18 +1293,25 @@
                         <div class="slider-container">
                             <label for="training-speed" class="tooltip" data-tooltip="Simulation speed multiplier (1x = real-time)">
                                 Training Speed: <span id="training-speed-value" class="slider-value">1.0x</span>
+                                <span id="cpu-bound-indicator" style="display: none; color: #ff9900; font-size: 0.8rem; margin-left: 8px;">
+                                    ⚠️ CPU Limited
+                                </span>
                             </label>
                             <input type="range" id="training-speed" min="0.1" max="50" step="0.1" value="1.0">
+                            <div id="actual-speed-display" style="display: none; margin-top: 4px; font-size: 0.75rem; color: #00d4ff; text-align: center;">
+                                Actual: <span id="actual-speed-value">0</span> steps/sec
+                            </div>
                             <div style="margin-top: 8px; display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">
                                 <button id="speed-1x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">1x</button>
                                 <button id="speed-2x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">2x</button>
                                 <button id="speed-10x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">10x</button>
                                 <button id="speed-20x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">20x</button>
                                 <button id="speed-50x" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem;">50x</button>
-                                <button id="speed-parallel" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem; background-color: #4CAF50;">Parallel</button>
+                                <button id="speed-max" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem; background-color: #ff4444;">Max</button>
+                                <!-- <button id="speed-parallel" class="speed-preset-btn" style="padding: 4px 8px; font-size: 0.8rem; background-color: #4CAF50;">Parallel</button> Removed temporarily -->
                             </div>
                             <div style="margin-top: 6px; font-size: 0.7rem; color: #888; text-align: center;">
-                                Use Parallel button for multi-core training
+                                Max: Unlimited single-thread speed
                             </div>
                         </div>
                         
