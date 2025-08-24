@@ -873,10 +873,10 @@ class TwoWheelBotRL {
         
         // Application state with debugging
         this._isTraining = false;
-        this.isPaused = false;
         this.trainingStep = 0;
         this.episodeCount = 0;
         this.bestScore = 0;
+        this.epsilonDecayEnabled = true; // Default: enable epsilon decay
         this.currentReward = 0;
         this.lastQValue = 0;
         
@@ -925,6 +925,9 @@ class TwoWheelBotRL {
         
         // Track whether any training has occurred (for epsilon management)
         this.hasEverTrained = false;
+        
+        // Store previous training state when testing model
+        this.previousTrainingState = null;
         
         // Auto-reset toggle for free run mode
         this.autoResetEnabled = true; // Auto reset when robot goes off screen in free run mode (enabled by default)
@@ -1133,12 +1136,10 @@ class TwoWheelBotRL {
             }
         });
         
-        document.getElementById('pause-training').addEventListener('click', () => {
-            this.pauseTraining();
-        });
-        
-        document.getElementById('reset-environment').addEventListener('click', () => {
-            this.resetEnvironment();
+        // Add epsilon decay checkbox handler
+        document.getElementById('epsilon-decay-enabled').addEventListener('change', (e) => {
+            this.epsilonDecayEnabled = e.target.checked;
+            console.log('Epsilon decay enabled:', this.epsilonDecayEnabled);
         });
         
         // Visualization controls
@@ -1278,6 +1279,12 @@ class TwoWheelBotRL {
     async startTraining() {
         if (this.isTraining) return;
         
+        // If we have a previous training state (from testing model), restore it instead of starting fresh
+        if (this.previousTrainingState && this.previousTrainingState.isTraining) {
+            this.restoreTrainingState();
+            return;
+        }
+        
         // Check if we have a pre-trained model (loaded from file or previous training)
         // Consider it pre-trained if: 1) any training has occurred, 2) we have episodes trained, or 3) model name suggests it's not a fresh model
         const hasPreTrainedModel = this.qlearning && (
@@ -1293,13 +1300,25 @@ class TwoWheelBotRL {
             await this.initializeQLearning();
         }
         
-        // For pre-trained models, use epsilon minimum to preserve learned behavior
-        if (hasPreTrainedModel && this.qlearning) {
-            const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
-            this.qlearning.hyperparams.epsilon = epsilonMin;
-            console.log(`Pre-trained model detected (hasEverTrained=${this.hasEverTrained}, episodes=${this.episodeCount}) - using epsilon minimum (${epsilonMin}) to preserve learned behavior`);
-        } else if (this.qlearning) {
-            console.log(`Fresh model detected - using epsilon from UI slider (${this.qlearning.hyperparams.epsilon}) for exploration`);
+        // Handle epsilon based on decay checkbox and model state
+        if (this.qlearning) {
+            // Set the epsilon decay flag on the Q-learning system
+            this.qlearning.epsilonDecayEnabled = this.epsilonDecayEnabled;
+            
+            if (!this.epsilonDecayEnabled) {
+                // If epsilon decay is disabled, always use epsilon minimum
+                const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
+                this.qlearning.hyperparams.epsilon = epsilonMin;
+                console.log(`Epsilon decay disabled - using epsilon minimum (${epsilonMin})`);
+            } else if (hasPreTrainedModel) {
+                // If decay is enabled but we have a pre-trained model, use epsilon minimum to preserve behavior
+                const epsilonMin = this.uiControls ? this.uiControls.getParameter('epsilonMin') : 0.01;
+                this.qlearning.hyperparams.epsilon = epsilonMin;
+                console.log(`Pre-trained model with decay enabled - using epsilon minimum (${epsilonMin}) to preserve learned behavior`);
+            } else {
+                // Fresh model with decay enabled - use epsilon from UI slider for exploration
+                console.log(`Fresh model with epsilon decay enabled - using epsilon from UI slider (${this.qlearning.hyperparams.epsilon}) for exploration`);
+            }
         }
         
         // CRITICAL FIX: Read current training speed from UI slider before starting
@@ -1311,7 +1330,6 @@ class TwoWheelBotRL {
         }
         
         this.isTraining = true;
-        this.isPaused = false;
         this.demoMode = 'training';
         this.updateFreeRunSpeedUI();
         
@@ -1351,8 +1369,6 @@ class TwoWheelBotRL {
         startButton.classList.add('danger');
         startButton.disabled = false;
         
-        document.getElementById('pause-training').disabled = false;
-        
         // Update control mode UIs (disabled during training)
         this.updateModelControlUI();
         this.updatePDControlUI();
@@ -1365,7 +1381,6 @@ class TwoWheelBotRL {
         
         // Stop training
         this.isTraining = false;
-        this.isPaused = false;
         this.demoMode = 'freerun';
         
         // Reset training speed to normal for free run mode
@@ -1412,14 +1427,10 @@ class TwoWheelBotRL {
         
         // Update UI buttons
         const startButton = document.getElementById('start-training');
-        const pauseButton = document.getElementById('pause-training');
         
         startButton.textContent = 'Start Training';
         startButton.classList.remove('danger');
         startButton.classList.add('primary');
-        
-        pauseButton.textContent = 'Pause Training';
-        pauseButton.disabled = true;
         
         // Update training status display
         this.updateTrainingModelDisplay();
@@ -1439,24 +1450,10 @@ class TwoWheelBotRL {
         console.log('Training stopped and reset');
     }
 
-    pauseTraining() {
-        if (!this.isTraining) return;
-        
-        this.isPaused = !this.isPaused;
-        
-        const pauseButton = document.getElementById('pause-training');
-        pauseButton.textContent = this.isPaused ? 'Continue Training' : 'Pause Training';
-        
-        // Update model display to show paused/training status
-        this.updateTrainingModelDisplay();
-        
-        console.log('Training', this.isPaused ? 'paused' : 'resumed');
-    }
 
     resetEnvironment() {
         // Stop all training and parallel processing
         this.isTraining = false;
-        this.isPaused = false;
         this.parallelModeEnabled = false;
         this.demoMode = 'freerun'; // Reset to free run mode
         this.modelControlEnabled = false; // Reset to manual control only
@@ -1522,8 +1519,6 @@ class TwoWheelBotRL {
         
         // Reset UI states
         document.getElementById('start-training').disabled = false;
-        document.getElementById('pause-training').disabled = true;
-        document.getElementById('pause-training').textContent = 'Pause Training';
         
         // Reset parallel training UI
         const parallelBtn = document.getElementById('parallel-training');
@@ -1772,13 +1767,8 @@ class TwoWheelBotRL {
             maxStepsPerFrame = Math.min(this.targetPhysicsStepsPerFrame, 1000);
         }
         
-        // Use optimized steps for all modes except when explicitly paused
-        const stepsToRun = this.isPaused ? 0 : maxStepsPerFrame;
-        
-        // If paused, skip all physics processing
-        if (this.isPaused) {
-            return;
-        }
+        // Use optimized steps for training mode
+        const stepsToRun = maxStepsPerFrame;
         
         // Profiling variables
         let robotStepTime = 0;
@@ -1821,7 +1811,7 @@ class TwoWheelBotRL {
                     }
                     break;
                 case 'training':
-                    if (this.isTraining && !this.isPaused) {
+                    if (this.isTraining) {
                         const trainingResult = this.getTrainingTorqueWithAction();
                         motorTorque = trainingResult.torque;
                         actionIndex = trainingResult.actionIndex;
@@ -1878,7 +1868,7 @@ class TwoWheelBotRL {
             }
             
             // Q-learning training integration
-            if (this.demoMode === 'training' && this.isTraining && !this.isPaused && this.qlearning) {
+            if (this.demoMode === 'training' && this.isTraining && this.qlearning) {
                 // Get next state after physics step (includes multi-timestep logic)
                 const nextState = this.robot.getNormalizedInputs();
                 
@@ -1927,8 +1917,7 @@ class TwoWheelBotRL {
             }
             
             // Handle episode completion for training/evaluation (only once per episode)
-            // Skip episode completion when training is paused to prevent falling/resetting
-            if (result.done && (this.demoMode === 'training') && !this.isPaused && !this.episodeEnded) {
+            if (result.done && (this.demoMode === 'training') && !this.episodeEnded) {
                 this.episodeEnded = true; // Set flag to prevent multiple calls
                 this.handleEpisodeEnd(result);
                 return; // Exit physics update completely to avoid multiple episode ends
@@ -1940,7 +1929,7 @@ class TwoWheelBotRL {
             }
             
             // Update training step counter
-            if (this.isTraining && !this.isPaused) {
+            if (this.isTraining) {
                 this.trainingStep++;
                 
                 // Performance tracking - record step
@@ -2005,8 +1994,7 @@ class TwoWheelBotRL {
                     if (!this.autoResetScheduled) {
                         this.autoResetScheduled = true;
                         
-                        // Pause simulation immediately to prevent further movement
-                        this.isPaused = true;
+                        // Auto-reset will handle the robot state
                         
                         // Reset performance timing to prevent slowdown
                         this.lastFrameTime = 0;
@@ -2039,8 +2027,7 @@ class TwoWheelBotRL {
                                     velocity: 0
                                 });
                                 
-                                // Resume simulation after reset
-                                this.isPaused = false;
+                                // Reset completed
                                 this.autoResetScheduled = false;
                                 
                                 console.log('Auto-reset completed - simulation resumed');
@@ -2062,8 +2049,7 @@ class TwoWheelBotRL {
                         console.log(`Robot fell over in free run mode (angle=${robotState.angle.toFixed(2)} rad), stopping simulation...`);
                     }
                     
-                    // Stop the simulation by pausing it
-                    this.isPaused = true;
+                    // Robot out of bounds handled by auto-reset
                     
                     // Reset performance timing to prevent slowdown when resuming
                     this.lastFrameTime = 0;
@@ -2161,10 +2147,8 @@ class TwoWheelBotRL {
         
         // Update training status indicator
         const statusIndicator = document.getElementById('training-status-indicator');
-        if (this.isTraining && !this.isPaused) {
+        if (this.isTraining) {
             statusIndicator.className = 'status-indicator training';
-        } else if (this.isTraining && this.isPaused) {
-            statusIndicator.className = 'status-indicator paused';
         } else {
             statusIndicator.className = 'status-indicator stopped';
         }
@@ -2657,18 +2641,11 @@ class TwoWheelBotRL {
             
             // Reset training state to prevent getting stuck
             this.isTraining = false;
-            this.isPaused = false;
             this.demoMode = 'freerun';
             
             // Update UI to reflect stopped state
             const startButton = document.getElementById('start-training');
-            const pauseButton = document.getElementById('pause-training');
-            
             if (startButton) startButton.disabled = false;
-            if (pauseButton) {
-                pauseButton.disabled = true;
-                pauseButton.textContent = 'Pause Training';
-            }
             
             // Update training display
             this.updateTrainingModelDisplay();
@@ -2999,22 +2976,15 @@ class TwoWheelBotRL {
             // Start next episode after brief pause
             setTimeout(() => {
                 try {
-                    console.log(`🔄 Episode ${this.episodeCount} completed. Training state: isTraining=${this.isTraining}, isPaused=${this.isPaused}`);
+                    console.log(`🔄 Episode ${this.episodeCount} completed. Training state: isTraining=${this.isTraining}`);
                     if (this.isTraining) {
                         console.log(`✅ Starting next episode/batch...`);
                         this.startNextEpisodeOrBatch();
                     } else {
-                        console.warn(`⚠️ Training stopped unexpectedly! isTraining=${this.isTraining}, isPaused=${this.isPaused}`);
-                        // This is where the bug might be - training stopped but UI not updated
+                        console.warn(`⚠️ Training stopped unexpectedly! isTraining=${this.isTraining}`);
                         // Force UI update to reflect actual state
                         const startButton = document.getElementById('start-training');
-                        const pauseButton = document.getElementById('pause-training');
-                        
                         if (startButton) startButton.disabled = false;
-                        if (pauseButton) {
-                            pauseButton.disabled = true;
-                            pauseButton.textContent = 'Pause Training';
-                        }
                         
                         this.updateTrainingModelDisplay();
                         console.log('🛠️ UI state corrected to match actual training state');
@@ -3023,18 +2993,11 @@ class TwoWheelBotRL {
                     console.error('Error in setTimeout callback for next episode:', error);
                     // Reset training state if error occurs
                     this.isTraining = false;
-                    this.isPaused = false;
                     this.demoMode = 'freerun';
                     
                     // Update UI
                     const startButton = document.getElementById('start-training');
-                    const pauseButton = document.getElementById('pause-training');
-                    
                     if (startButton) startButton.disabled = false;
-                    if (pauseButton) {
-                        pauseButton.disabled = true;
-                        pauseButton.textContent = 'Pause Training';
-                    }
                     
                     this.updateOnScreenControlsVisibility();
                     
@@ -3066,10 +3029,7 @@ class TwoWheelBotRL {
         // Stop training if switching away from training mode
         if (this.demoMode === 'training' && newMode !== 'training') {
             this.isTraining = false;
-            this.isPaused = false;
-                document.getElementById('start-training').disabled = false;
-            document.getElementById('pause-training').disabled = true;
-            document.getElementById('pause-training').textContent = 'Pause Training';
+            document.getElementById('start-training').disabled = false;
         }
         
         // Disable manual control when leaving manual mode
@@ -3165,15 +3125,16 @@ class TwoWheelBotRL {
             return;
         }
         
-        // Stop any current training
-        if (this.isTraining) {
-            this.pauseTraining();
-        }
+        // Save current training state to restore later
+        this.previousTrainingState = {
+            isTraining: this.isTraining,
+            demoMode: this.demoMode,
+            trainingSpeed: this.trainingSpeed
+        };
         
-        // Switch to free run mode
+        // Switch to free run mode for testing
         this.demoMode = 'freerun';
         this.isTraining = false;
-        this.isPaused = false;
         
         // Enable model control and disable PD control
         this.modelControlEnabled = true;
@@ -3196,6 +3157,53 @@ class TwoWheelBotRL {
         }
         
         console.log('Testing model in free run mode - Model Control active');
+    }
+    
+    /**
+     * Restore previous training state after testing model
+     */
+    restoreTrainingState() {
+        if (!this.previousTrainingState) {
+            return; // No previous state to restore
+        }
+        
+        const prevState = this.previousTrainingState;
+        
+        // Restore training state
+        this.isTraining = prevState.isTraining;
+        this.demoMode = prevState.demoMode;
+        
+        // Restore training speed if we were in training mode
+        if (prevState.trainingSpeed && this.isTraining) {
+            this.setTrainingSpeed(prevState.trainingSpeed);
+            console.log(`Restored training speed to ${prevState.trainingSpeed}x`);
+        } else {
+            // For free run mode, ensure normal speed
+            this.trainingSpeed = 1.0;
+            this.targetPhysicsStepsPerFrame = 1;
+        }
+        
+        // Update UI to reflect restored state
+        if (this.isTraining) {
+            const startButton = document.getElementById('start-training');
+            
+            if (startButton) {
+                startButton.textContent = 'Stop Training';
+                startButton.classList.remove('primary');
+                startButton.classList.add('danger');
+                startButton.disabled = false;
+            }
+        }
+        
+        // Update control mode UIs
+        this.updateModelControlUI();
+        this.updatePDControlUI();
+        this.updateTrainingModelDisplay();
+        
+        // Clear saved state
+        this.previousTrainingState = null;
+        
+        console.log(`Training state restored: isTraining=${this.isTraining}, mode=${this.demoMode}`);
     }
     
     updateFreeRunSpeedUI() {
@@ -3377,7 +3385,7 @@ class TwoWheelBotRL {
             console.log(`Max Steps Per Episode updated to ${maxStepsPerEpisode}`);
             
             // If currently training and current step count exceeds new limit, end episode
-            if (this.isTraining && !this.isPaused && !this.episodeEnded && 
+            if (this.isTraining && !this.episodeEnded && 
                 this.trainingStep >= maxStepsPerEpisode && 
                 (this.demoMode === 'training')) {
                 console.log(`Episode ending immediately - current step ${this.trainingStep} >= new limit ${maxStepsPerEpisode}`);
@@ -3686,9 +3694,9 @@ class TwoWheelBotRL {
         this.autoResetEnabled = !this.autoResetEnabled;
         this.updateAutoResetUI();
         
-        // If auto-reset was just enabled and simulation is paused in free run mode,
+        // If auto-reset was just enabled in free run mode and robot is out of bounds,
         // trigger an immediate reset (robot likely went off-screen/fell)
-        if (this.autoResetEnabled && this.demoMode === 'freerun' && this.isPaused && !this.autoResetScheduled) {
+        if (this.autoResetEnabled && this.demoMode === 'freerun' && !this.autoResetScheduled) {
             console.log('Auto-reset enabled while simulation paused - triggering immediate reset...');
             
             // Schedule immediate reset (no delay since user explicitly enabled auto-reset)
@@ -3715,7 +3723,6 @@ class TwoWheelBotRL {
                     this.lastFrameTime = 0;
                     this.lastPhysicsUpdate = 0;
                     this.frameTimeHistory = [];
-                    this.isPaused = false;
                     this.autoResetScheduled = false;
                     
                     console.log('Immediate auto-reset completed - simulation resumed');
@@ -3777,11 +3784,9 @@ class TwoWheelBotRL {
             this.lastPhysicsUpdate = 0;
             this.frameTimeHistory = [];
             
-            // Only resume simulation in free run mode (for manual resets)
-            // Auto-reset in training mode should not unpause
+            // Reset completed in free run mode
             if (this.demoMode === 'freerun') {
-                this.isPaused = false;
-                console.log('Simulation resumed after manual reset');
+                console.log('Manual reset completed');
             }
             
             let resetAngle = 0; // Default: perfectly balanced
@@ -4603,10 +4608,8 @@ private:
                 } else if (this.qlearning.consecutiveMaxEpisodes > 0) {
                     stats.push(`Progress: ${this.qlearning.consecutiveMaxEpisodes}/20`);
                 }
-                if (this.isTraining && !this.isPaused) {
+                if (this.isTraining) {
                     stats.push('🔴 Training');
-                } else if (this.isPaused) {
-                    stats.push('⏸️ Paused');
                 }
             }
             statsElement.textContent = stats.join(' | ');

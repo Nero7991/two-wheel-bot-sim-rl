@@ -369,6 +369,13 @@ export class QLearning {
      * @private
      */
     _updateEpsilon() {
+        // Check if epsilon decay is disabled (controlled by main app)
+        if (this.epsilonDecayEnabled === false) {
+            // If decay is disabled, always use epsilon minimum
+            this.hyperparams.epsilon = this.hyperparams.epsilonMin;
+            return;
+        }
+        
         if (this.globalStepCount < this.hyperparams.epsilonDecay) {
             // Linear interpolation from initial epsilon to epsilon min
             // Use the initial epsilon value that was set when training started

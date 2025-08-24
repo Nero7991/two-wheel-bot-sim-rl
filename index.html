@@ -222,6 +222,27 @@
             text-align: right;
         }
 
+        .checkbox-container {
+            margin: 8px 0;
+            margin-bottom: 18px;
+            margin-left: 6px;
+        }
+
+        .checkbox-container label {
+            display: flex;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #ccc;
+            cursor: pointer;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+            accent-color: #00d4ff;
+        }
+
         .parameter-group {
             border: 1px solid #404040;
             border-radius: 4px;
@@ -1015,6 +1036,28 @@
                 margin-bottom: 12px;
             }
             
+            /* Make buttons half-width on mobile using flexbox for better layout */
+            .control-section-content {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            
+            .control-section button {
+                flex: 1;
+                min-width: calc(50% - 4px);
+                margin: 0;
+            }
+            
+            /* Allow non-button elements to take full width */
+            .control-section-content .checkbox-container,
+            .control-section-content .slider-container,
+            .control-section-content .parameter-group,
+            .control-section-content select,
+            .control-section-content .button-group {
+                flex: 1 1 100%;
+            }
+            
             /* Make the on-screen controls appropriately sized for mobile */
             .on-screen-btn {
                 width: 50px;
@@ -1074,9 +1117,25 @@
             }
             
             /* Further optimize button layout for very small screens */
+            .control-section-content {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            
             .control-section button {
-                width: 100%;
-                margin: 6px 0;
+                flex: 1;
+                min-width: calc(50% - 4px);
+                margin: 0;
+            }
+            
+            /* Allow non-button elements to take full width */
+            .control-section-content .checkbox-container,
+            .control-section-content .slider-container,
+            .control-section-content .parameter-group,
+            .control-section-content select,
+            .control-section-content .button-group {
+                flex: 1 1 100%;
             }
             
             /* Stack inline buttons vertically on very small screens */
@@ -1222,9 +1281,14 @@
                     </h3>
                     <div class="control-section-content">
                         <button id="start-training" class="primary">Start Training</button>
-                        <button id="pause-training" disabled>Pause Training</button>
                         <button id="test-model-btn" class="control-btn">Test Model</button>
-                        <button id="reset-environment" class="danger">Reset Environment</button>
+                        
+                        <div class="checkbox-container">
+                            <label>
+                                <input type="checkbox" id="epsilon-decay-enabled" checked>
+                                Enable Epsilon Decay
+                            </label>
+                        </div>
                         
                         <div class="slider-container">
                             <label for="training-speed" class="tooltip" data-tooltip="Simulation speed multiplier (1x = real-time)">
