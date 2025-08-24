@@ -3125,10 +3125,16 @@ class TwoWheelBotRL {
             return;
         }
         
+        // If training is currently running, stop it first
+        if (this.isTraining) {
+            console.log('Auto-stopping training to test model...');
+            this.stopTraining();
+        }
+        
         // Save current training state to restore later
         this.previousTrainingState = {
-            isTraining: this.isTraining,
-            demoMode: this.demoMode,
+            isTraining: false, // We stopped training, so set to false
+            demoMode: 'freerun', // Will be free run after stopping training
             trainingSpeed: this.trainingSpeed
         };
         
