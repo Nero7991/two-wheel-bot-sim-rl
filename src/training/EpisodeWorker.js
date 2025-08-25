@@ -100,7 +100,7 @@ function initializePhysics() {
             this.rewardType = config.rewardType || 'simple';
             
             // Configurable angle and motor limits
-            this.maxAngle = config.maxAngle || Math.PI / 6; // Default 30 degrees
+            this.maxAngle = config.maxAngle || Math.PI / 3; // Default 60 degrees - matches normalization constant
             this.motorTorqueRange = config.motorTorqueRange || 8.0; // Default ±8.0 Nm
             
             this.gravity = 9.81;
@@ -337,9 +337,10 @@ function runEpisode(params) {
     // Create robot with provided configuration
     const robot = new globalThis.BalancingRobot(robotConfig);
     
-    // Initialize robot state
+    // Initialize robot state with progressive angle distribution
+    const startAngleRange = getEpisodeStartAngleRange(globalEpisode);
     robot.reset({
-        angle: (Math.random() - 0.5) * 0.2, // Small random initial angle
+        angle: (Math.random() - 0.5) * startAngleRange, // Progressive angle range
         angularVelocity: 0,
         position: 0,
         velocity: 0
@@ -477,3 +478,18 @@ self.onmessage = async function(event) {
         });
     }
 };
+
+/**
+ * Get progressive episode start angle range based on training progress
+ * @param {number} episodeNumber - Current episode number (1-based)
+ * @returns {number} Angle range in radians
+ */
+function getEpisodeStartAngleRange(episodeNumber) {
+    if (episodeNumber <= 100) {
+        // First 100 episodes: small range for easy learning (±2.9°)
+        return 0.1; // ±0.05 radians
+    } else {
+        // After 100 episodes: expand to full ±30° range for robust training
+        return Math.PI / 3; // ±π/6 radians = ±30°
+    }
+}

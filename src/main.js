@@ -49,7 +49,7 @@ class UIControls {
             robotHeight: 0.5,
             motorStrength: 5.0,
             wheelFriction: 0.3,
-            maxAngle: Math.PI / 6, // 30 degrees
+            maxAngle: Math.PI / 3, // 60 degrees - matches normalization constant
             motorTorqueRange: 8.0
         };
         
@@ -2972,15 +2972,34 @@ class TwoWheelBotRL {
         this.previousDone = false;
         this.lastTrainingLoss = 0;
         
-        // Reset robot with small random perturbation
+        // Reset robot with progressive angle distribution
+        const startAngleRange = this.getEpisodeStartAngleRange();
         this.robot.reset({
-            angle: (Math.random() - 0.5) * 0.2,
+            angle: (Math.random() - 0.5) * startAngleRange,
             angularVelocity: (Math.random() - 0.5) * 0.5,
             position: 0,
             velocity: 0
         });
         
-        console.log(`Starting episode ${this.episodeCount + 1}`);
+        const currentEpisode = this.episodeCount + 1;
+        const angleRangeDegrees = (startAngleRange * 180 / Math.PI).toFixed(1);
+        console.log(`Starting episode ${currentEpisode} (start angle range: ±${angleRangeDegrees}°)`);
+    }
+    
+    /**
+     * Get progressive episode start angle range based on training progress
+     * @returns {number} Angle range in radians
+     */
+    getEpisodeStartAngleRange() {
+        const currentEpisode = this.episodeCount + 1;
+        
+        if (currentEpisode <= 100) {
+            // First 100 episodes: small range for easy learning (±2.9°)
+            return 0.1; // ±0.05 radians
+        } else {
+            // After 100 episodes: expand to full ±30° range for robust training
+            return Math.PI / 3; // ±π/6 radians = ±30°
+        }
     }
     
     /**

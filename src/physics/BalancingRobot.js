@@ -93,7 +93,7 @@ export class BalancingRobot {
         this.wheelFriction = this._validateParameter(config.wheelFriction, 0.3, 0.0, 1.0, 'wheelFriction');
         
         // Configurable angle and motor limits
-        this.maxAngle = this._validateParameter(config.maxAngle, Math.PI / 6, Math.PI / 180, Math.PI / 3, 'maxAngle'); // Default 30 degrees, range 1-60 degrees
+        this.maxAngle = this._validateParameter(config.maxAngle, Math.PI / 3, Math.PI / 180, Math.PI / 3, 'maxAngle'); // Default 60 degrees, range 1-60 degrees - matches normalization constant
         this.motorTorqueRange = this._validateParameter(config.motorTorqueRange, 8.0, 0.5, 10.0, 'motorTorqueRange'); // Default ±8.0 Nm
         
         // Reward function type: 'simple' (CartPole-style) or 'complex' (angle-proportional)
